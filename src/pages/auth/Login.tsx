@@ -1,3 +1,4 @@
+import authService from "@/services/authService";
 import useAuthStore from "@/store/authStore";
 import { AuthRequest } from "@/types";
 import { LockOutlined } from "@mui/icons-material";
@@ -25,10 +26,10 @@ const Login = () => {
             setError('');
 
             // En produccion, usariamos:
-            // const response = await apiService.post('/auth/login', data);
+            const response = await authService.login(data);
 
             // Simulacion para desarrollo
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            /* await new Promise(resolve => setTimeout(resolve, 1000));
 
             const mockResponse ={
                 token: 'mock-jwt-token',
@@ -37,17 +38,47 @@ const Login = () => {
                 email: `${data.username}@example.com`,
                 role: 'USER'
             };
-
+ 
             login({
                 id: mockResponse.id,
                 username: mockResponse.username,
                 email: mockResponse.email,
                 role: mockResponse.role,
             }, mockResponse.token);
+            */
+
+            // Almacenar informacion de autenticacion
+            login({
+                id: response.id,
+                username: response.username,
+                email: response.email,
+                role: response.role,
+            }, response.token);
 
             navigate('/');
         } catch (err: any){
-            setError(err.response?.data?.message || 'Error al iniciar sesión');
+            //setError(err.response?.data?.message || 'Error al iniciar sesión');
+            console.error('Error al iniciar sesión:', err);
+
+            //Manejar diferentes tipos de errores
+            if(err.response){
+                // El servidor respondio con un error
+                if(err.response.status === 401){
+                    setError('Credenciales inválidas. Por favor verifique su usuario y contraseña.');
+                }else if(err.response.data?.error){
+                    setError(err.response.data.error);
+                }else if(err.response.data?.message){
+                    setError(err.response.data.message);
+                }else{
+                    setError(`Error ${err.response.status}: ${err.response.statusText}`);
+                }
+            } else if (err.request){
+                // No se recibio respuesta
+                setError('No se pudo conecta con el servidor. Verifique su conexion a internet.');
+            } else{
+                // Error al configurar la peticion
+                setError('Error al procesar la solicitud. Intente nuevamente.');
+            }
         } finally {
             setLoading(false);
         }

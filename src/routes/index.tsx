@@ -10,7 +10,7 @@ const MainLayout = lazy(() => import('../components/layout/MainLayout'));
 
 // Paginas de autenticacion
 const Login = lazy(() => import('../pages/auth/Login'));
-//const Register = lazy(() => import('../pages/auth/Register'));
+const Register = lazy(() => import('../pages/auth/Register'));
 
 //Paginas principales
 const Dashboard = lazy(() => import('../pages/Dashboard'));
@@ -44,7 +44,7 @@ const AppRoutes = () => {
                 <Routes>
                     {/* Rutas publicas*/}
                     <Route path="/login" element={<Login />} />
-                    {/*<Route path="/register" element={<Register />} />*/}
+                    <Route path="/register" element={<Register />} />
 
                     {/* Rutas protegidas */}
                     <Route path="/" element={

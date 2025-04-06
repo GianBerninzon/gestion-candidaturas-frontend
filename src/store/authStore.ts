@@ -11,7 +11,7 @@ interface AuthState {
 
 const useAuthStore = create<AuthState>((set) => {
     // Intentar recuperar el token y usuario del localStorage
-    const storedToken = localStorage.getItem('token');
+    const storedToken = localStorage.getItem('auth_token');
     const storedUser = localStorage.getItem('user')
 
     return{
@@ -20,13 +20,13 @@ const useAuthStore = create<AuthState>((set) => {
         isAuthenticated: !!storedToken,
 
         login: (user, token) => {
-            localStorage.setItem('token', token);
+            localStorage.setItem('auth_token', token);
             localStorage.setItem('user', JSON.stringify(user));
             set({ user, token, isAuthenticated: true });
         },
 
         logout: () => {
-            localStorage.removeItem('token');
+            localStorage.removeItem('auth_token');
             localStorage.removeItem('user');
             set({ user: null, token: null, isAuthenticated: false });
         }    
