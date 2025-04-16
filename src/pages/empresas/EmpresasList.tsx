@@ -1,32 +1,41 @@
+import empresasService from "@/services/empresasService";
 import { Empresa } from "@/types";
 import {
+    Add as AddIcon,
+    Business as BusinessIcon,
+    Edit as EditIcon,
+    Search as SearchIcon,
+    Delete as DeleteIcon,
+    Check as CheckIcon
+} from "@mui/icons-material";
+import {
+    Alert,
     Box,
     Button,
+    Checkbox,
+    CircularProgress,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
+    IconButton,
     Paper,
-    TextField,
-    Typography,
+    Snackbar,
     Table,
     TableBody,
-    IconButton,
-    TableContainer,
-    TablePagination,
-    TableHead,
-    TableRow,
     TableCell,
-    Alert,
-    CircularProgress,
-    Snackbar
+    TableContainer,
+    TableHead,
+    TablePagination,
+    TableRow,
+    TextField,
+    Tooltip,
+    Typography
 } from "@mui/material";
-import { 
-    Add as AddIcon,
-    Search as SearchIcon,
-    Visibility as VisibilityIcon,
-    Edit as EditIcon,
-    Business as BusinessIcon
-} from "@mui/icons-material";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import empresasService from "@/services/empresasService";
+import useAuthStore from "@/store/authStore";
 
 /**
  * Componente que muestra la lista de empresas y permite su gestión
@@ -43,9 +52,19 @@ const EmpresasList: React.FC = () => {
     const [filtroNombre, setFiltroNombre] = useState('');
     const [totalElements, setTotalElements] = useState(0);
     const [retrying, setRetrying] = useState(false);
-    
+
+    //Estados para selección múltiple y eliminación
+    const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>([]);
+    const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+    const [deleteId, setDeleteId] = useState<string | null>(null);
+    const [deletingMultiple, setDeletingMultiple] = useState(false);
+    const [deleteSuccess, setDeleteSuccess] = useState(false);
+
+
     const navigate = useNavigate();
     const isDev = import.meta.env.DEV;
+    const user = useAuthStore(state => state.user);
+    const isAdmin = user?.role === 'ADMIN' || user?.role == 'ROOT';
 
     // Cargar empresas con paginacion y filtros
     const fetchEmpresas = async () => {
@@ -141,6 +160,69 @@ const EmpresasList: React.FC = () => {
         navigate(`/empresas/${id}/edit`);
     };
 
+    // Funcion para manejar la seleccion de empresas
+    const handleSelectEmpresa = (id: string) =>{
+        setSelectedEmpresas(prev => {
+            if(prev.includes(id)){
+                return prev.filter(empresaId  => empresaId  !== id);
+            }else{
+                return [...prev, id];
+            }
+        })
+    };
+
+    // Función para seleccionar o deseleccionar todas las empresas
+    const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if(event.target.checked){
+            const allIds = empresas.map(empresa => empresa.id);
+            setSelectedEmpresas(allIds);
+        }else{
+            setSelectedEmpresas([]);
+        }
+    };
+
+    // Abrir diálogo de confirmación para eliminar una empresa
+    const handleDeleteConfirm = (id: string) => {
+        setDeleteId(id);
+        setDeletingMultiple(false);
+        setOpenDeleteDialog(true);
+    };
+
+    // Abrir diálogo de confirmación para eliminar múltiples empresas
+    const handleDeleteMultipleConfirm = () => {
+        setDeletingMultiple(true);
+        setOpenDeleteDialog(true);
+    };
+
+    // Cerrar diálogo de confirmación
+    const handleCloseDeleteDialog = () => {
+        setOpenDeleteDialog(false);
+        setDeleteId(null);
+    };
+
+    // Eliminar empresa
+    const handleDeleteEmpresa = async () => {
+        try {
+            if (deletingMultiple) {
+                // Eliminar múltiples empresas
+                await empresasService.deleteEmpresasBatch(selectedEmpresas);
+                setSelectedEmpresas([]);
+            }else if(deleteId){
+                // Eliminar una sola empresa
+                await empresasService.deleteEmpresa(deleteId);
+            }
+
+            setDeleteSuccess(true);
+            fetchEmpresas();
+        } catch (error) {
+            console.error('Error al eliminar empresa:', error);
+            setError('Error al eliminar empresa(s). Inténtelo de nuevo.');
+        } finally {
+            setOpenDeleteDialog(false);
+            setDeleteId(null);
+        }
+    };
+
     const handleRetry = () => {
         setRetrying(true);
         fetchEmpresas();
@@ -153,119 +235,149 @@ const EmpresasList: React.FC = () => {
     };
 
     return (
-        <Box sx={{ width: '100%' }}>
-            <Box sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                width: '100%',
-                maxWidth: '1000px',
-                mx: 'auto'
-            }}>
-                {/* Encabezado y boton de nueva empresa */}
-                <Box sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
+
+        <Box sx={{ with:'100%'}}>
+            <Box
+                sx={{
+                    display:'flex',
+                    flexDirection: 'column',
                     alignItems: 'center',
-                    mb: 3,
-                    width: '100%'
+                    width:'100%',
+                    maxWidth:'100%',
+                    mx: 'auto',
+                    p: 2
                 }}>
-                    <Typography variant="h4" component="h1" gutterBottom>
-                        Empresas
-                    </Typography>
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        startIcon={<AddIcon />}
-                        onClick={handleCreateEmpresa}
-                    >
-                        Nueva Empresa
-                    </Button>
-                </Box>
-
-                {/* Filtros */}
-                <Paper sx={{
-                    p:2,
-                    mb:3,
-                    width: '100%'
-                }}>
-                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                        <TextField
-                        label="Buscar por nombre"
-                        variant="outlined"
-                        size="small"
-                        value={filtroNombre}
-                        onChange={(e) => setFiltroNombre(e.target.value)}
-                        sx={{ flexGrow: 1, minWidth: '200px'}}
-                        InputProps={{
-                            startAdornment: <SearchIcon sx={{ mr:1, color: 'text.secondary' }} />,
-                        }}
-                    />
-
-                    {/* Boton para limpiar filtros */}
-                    {filtroNombre && (
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            onClick={handleClearFilters}
-                        >
-                            Limpiar Filtros
-                        </Button>
-                    )}
-                    </Box>
-                </Paper>
-
-                {/* Mensaje de erro */}
-                {error && (
-                    <Alert
-                        severity="error"
-                        sx={{ mb:3, width: '100%' }}
-                        action={
+                    {/* Encabezado y acciones */}
+                    <Box sx={{
+                        display:'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        mb:3,
+                        width:'100%',
+                        flexWrap: 'wrap',
+                        gap: 2
+                    }}>
+                        <Typography variant="h4" component="h1">
+                            Empresas
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1}}>
+                            {isAdmin && selectedEmpresas.length > 0 && (
+                                <Button
+                                    variant="outlined"
+                                    color="error"
+                                    startIcon={<DeleteIcon />}
+                                    onClick={handleDeleteMultipleConfirm}
+                                >
+                                    Eliminar seleccionadas ({selectedEmpresas.length})
+                                </Button>
+                            )}
                             <Button
-                                color="inherit"
-                                size="small"
-                                onClick={handleRetry}
-                                disabled={retrying}
+                                variant="outlined"
+                                color="primary"
+                                startIcon={<AddIcon />}
+                                onClick={handleCreateEmpresa}
                             >
-                                {retrying ? 'Reintentando...' : 'Reintentar'}
+                                Nueva empresa
                             </Button>
-                        }
-                    >
-                        {error}
-                    </Alert>
-                )}
+                        </Box>
+                    </Box>
 
-                {/* Tabla de empresas */}
-                <Paper sx={{ width: '100%', overflow: 'hidden', mb:3 }}>
+                    {/* Filtros */}
+                    <Paper sx={{
+                        p:2,
+                        mb:3,
+                        width:'100%'
+                    }}>
+                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <TextField 
+                                label="Buscar por nombre"
+                                variant="outlined"
+                                size="small"
+                                value={filtroNombre}
+                                onChange={(e) => setFiltroNombre(e.target.value)}
+                                sx={{ flexGrow: 1, minWidth: '200px'}}
+                                inputProps={{
+                                    startAdornment: <SearchIcon sx={{ mr:1, color: 'text.secondary'}} />,
+                                }}
+                            />
+                            <Button
+                                variant="outlined"
+                                size="small"
+                                onClick={handleClearFilters}
+                            >
+                                Limpiar filtros
+                            </Button>
+                        </Box>
+                    </Paper>
+
+                    {/* Mensaje de error */}
+                    {error && (
+                        <Alert
+                            severity="error"
+                            sx={{ mb: 3, width: '100%' }}
+                        >
+                            {error}
+                        </Alert>
+                    )}
+
+                    {/* Indicador de carga */}
                     {loading ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', py:4 }}>
+                        <Box sx={{
+                            display: 'flex',
+                            justifyContent: 'center',
+                            width: '100%',
+                            p: 4
+                        }}>
                             <CircularProgress />
                         </Box>
                     ): (
                         <>
-                            <TableContainer sx={{ maxHeight: 440 }}>
-                                <Table stickyHeader>
+                            <TableContainer component={Paper}>
+                                <Table>
                                     <TableHead>
-                                        <TableRow>
-                                            <TableCell align="center">Nombre</TableCell>
-                                            <TableCell align="center">Correo</TableCell>
-                                            <TableCell align="center">Telefono</TableCell>
-                                            <TableCell align="center">Acciones</TableCell>
+                                        <TableRow sx={{ backgroundColor: 'primary.main'}}>
+                                            {isAdmin && (
+                                                <TableCell padding="checkbox" sx={{ color: 'white'}}>
+                                                    <Checkbox 
+                                                        color="default"
+                                                        indeterminate={selectedEmpresas.length > 0 && selectedEmpresas.length < empresas.length}
+                                                        checked={empresas.length > 0 && selectedEmpresas.length === empresas.length}
+                                                        onChange={handleSelectAll}
+                                                        sx={{ color: 'white' }}
+                                                    />
+                                                </TableCell>
+                                            )}
+                                            <TableCell align="left" sx={{ color: 'white', fontWeight: 'bold'}}>Nombre</TableCell>
+                                            <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold'}}>Email</TableCell>
+                                            <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold'}}>Teléfono</TableCell>
+                                            <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold'}}>Acciones</TableCell>
                                         </TableRow>
                                     </TableHead>
                                     <TableBody>
                                         {empresas.length > 0 ? (
                                             empresas.map((empresa) => (
-                                                <TableRow hover key={empresa.id}>
-                                                    <TableCell align="center">
-                                                        <Box sx={{ 
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                         }}>
-                                                            <BusinessIcon
+                                                <TableRow key={empresa.id} hover>
+                                                    {isAdmin && (
+                                                        <TableCell padding="checkbox">
+                                                            <Checkbox 
+                                                                checked={selectedEmpresas.includes(empresa.id)}
+                                                                onChange={() => handleSelectEmpresa(empresa.id)}
+                                                            />
+                                                        </TableCell>
+                                                    )}
+                                                    <TableCell>
+                                                        <Box
+                                                            sx={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                cursor: 'pointer',
+                                                                '&: hover': { textDecoration: 'underline', color: 'primary.main' }
+                                                            }}
+                                                            onClick={() => handleViewEmpresa(empresa.id)}
+                                                        >
+                                                            <BusinessIcon 
                                                                 fontSize="small"
-                                                                sx={{ mr:1, color: 'primary.main', opacity: 0.7 }}
+                                                                sx={{ mr: 1, color: 'primary.main', opacity: 0.7 }}
                                                             />
                                                             {empresa.nombre}
                                                         </Box>
@@ -273,26 +385,31 @@ const EmpresasList: React.FC = () => {
                                                     <TableCell align="center">{empresa.correo || 'N/A'}</TableCell>
                                                     <TableCell align="center">{empresa.telefono || 'N/A'}</TableCell>
                                                     <TableCell align="center">
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleViewEmpresa(empresa.id)}
-                                                            title="Ver detalles"
-                                                        >
-                                                            <VisibilityIcon fontSize="small"/>
-                                                        </IconButton>
-                                                        <IconButton
-                                                            size="small"
-                                                            onClick={() => handleEditEmpresa(empresa.id)}
-                                                            title="Editar"
-                                                        >
-                                                            <EditIcon fontSize="small"/>
-                                                        </IconButton>
+                                                        <Tooltip title="Editar empresa">
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleEditEmpresa(empresa.id)}
+                                                            >
+                                                                <EditIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                        {isAdmin && (
+                                                            <Tooltip title="Eliminar empresa">
+                                                                <IconButton
+                                                                    size="small"
+                                                                    onClick={() => handleDeleteConfirm(empresa.id)}
+                                                                    color="error"
+                                                                >
+                                                                    <DeleteIcon fontSize="small" />
+                                                                </IconButton>
+                                                            </Tooltip>
+                                                        )}
                                                     </TableCell>
                                                 </TableRow>
                                             ))
                                         ) : (
                                             <TableRow>
-                                                <TableCell colSpan={4} align="center">
+                                                <TableCell colSpan={isAdmin ? 5 : 4} align="center">
                                                     No se encontraron empresas
                                                 </TableCell>
                                             </TableRow>
@@ -308,33 +425,66 @@ const EmpresasList: React.FC = () => {
                                 rowsPerPage={rowsPerPage}
                                 onRowsPerPageChange={handleChangeRowsPerPage}
                                 labelRowsPerPage="Filas por página"
-                                labelDisplayedRows={({ from, to, count }) =>
+                                labelDisplayedRows={({ from, to, count}) =>
                                     `${from}-${to} de ${count !== -1 ? count : `mas de ${to}`}`
-                                }
-                                rowsPerPageOptions={[5, 10, 25]}
+                            }
                             />
                         </>
                     )}
-                </Paper>
-            </Box>
 
-            {/* SnackBar para errores de red */}
-            <Snackbar
-                open={!!error && error.includes('No se pudo conectar')}
-                autoHideDuration={6000}
-                message='Error de conexion con el servidor'
-                action={
-                    <Button
-                        color="secondary"
-                        size="small"
-                        onClick={handleRetry}
+                    {/* Snackbar para errores de red */}
+                    <Snackbar
+                        open={!!error && error.includes('No se pudo conectar')}
+                        autoHideDuration={6000}
+                        message="Error de conexión con el servidor"
+                        action={
+                            <Button
+                                color="secondary"
+                                size="small"
+                                onClick={handleRetry}
+                            >
+                                Reintentar
+                            </Button>
+                        }
+                    />
+
+                    {/* Snackbar para exito de eliminación */}
+                    <Snackbar
+                        open={deleteSuccess}
+                        autoHideDuration={3000}
+                        onClose={() => setDeleteSuccess(false)}
+                        message="Empresa(s) eliminada(s) exitosamente"
+                    />
+
+                    {/* Dialogo de confirmación para eliminar */}
+                    <Dialog
+                        open={openDeleteDialog}
+                        onClose={handleCloseDeleteDialog}
                     >
-                        Reintentar
-                    </Button>
-                }
-            />
+                        <DialogTitle>
+                            {deletingMultiple ? "Eliminar empresas seleccionadas" : "Eliminar empresa"}
+                        </DialogTitle>
+                        <DialogContent>
+                            <DialogContentText>
+                                {deletingMultiple
+                                    ? `¿Estás seguro de eliminar las ${selectedEmpresas.length} empresas seleccionadas? Esta acción no se puede deshacer.`
+                                    : `¿Estás seguro de eliminar esta empresa? Esta acción no se puede deshacer.`
+                                }
+                            </DialogContentText>
+                        </DialogContent>
+                        <DialogActions>
+                            <Button onClick={handleCloseDeleteDialog} color="primary">
+                                Cancelar
+                            </Button>
+                            <Button onClick={handleDeleteEmpresa} color="error" variant="contained">
+                                Eliminar
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
+                </Box>
         </Box>
     );
+        
 };
 
 export default EmpresasList;
