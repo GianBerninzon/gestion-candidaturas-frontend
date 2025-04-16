@@ -128,6 +128,15 @@ class EmpresasService {
   }
 
   /**
+   * Elimina multiples empresas por sus IDs
+   * @param ids Array de IDs de empresas a eliminar
+   * @returns ResponseEntity con el número de empresas eliminadas.
+   */
+  async deleteEmpresasBatch(ids: string[]) {
+    return apiService.delete(`${BASE_URL}/batch`, { data: ids });
+  }
+
+  /**
    * Obtiene todos los reclutadores de una empresa
    * @param id ID de la empresa
    */
