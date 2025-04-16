@@ -1,4 +1,4 @@
-import { Empresa } from '@/types';
+import { Candidatura, Empresa, EstadoCandidatura } from '@/types';
 import {
     Box,
     Button,
@@ -7,8 +7,16 @@ import {
     Divider,
     IconButton,
     Paper,
-    Skeleton,
     Typography,
+    CircularProgress,
+    Alert,
+    TableRow,
+    TableCell,
+    TableContainer,
+    Table,
+    TableHead,
+    TableBody,
+    Chip,
     Tooltip
 } from '@mui/material';
 import {
@@ -17,249 +25,300 @@ import {
     Email as EmailIcon,
     Phone as PhoneIcon,
     Business as BusinessIcon,
-    CalendarToday as CalendarTodayIcon
+    Visibility as VisibilityIcon
 } from '@mui/icons-material';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import useAuthStore from '@/store/authStore';
+import empresasService from '@/services/empresasService';
+import candidaturasService from '@/services/candidaturasService';
 
-// Datos simulados para desarrollo (en producción vendrían de la API)
-const mockEmpresas: Empresa[] = [
-    {
-        id: '1',
-        nombre: 'Empresa ABC',
-        correo: 'contacto@empresaabc.com',
-        telefono: '123456789',
-        fechaCreacion: '2023-01-15',
-        fechaActualizacion: '2023-05-20'
-    },
-    {
-        id: '2',
-        nombre: 'Corporación XYZ',
-        correo: 'info@corporacionxyz.com',
-        telefono: '987654321',
-        fechaCreacion: '2023-02-10',
-        fechaActualizacion: '2023-06-15'
-    },
-    {
-        id: '3',
-        nombre: 'Tech Solutions',
-        correo: 'soporte@techsolutions.com',
-        telefono: '555555555',
-        fechaCreacion: '2023-03-05',
-        fechaActualizacion: '2023-07-10'
-    },
-    {
-        id: '4',
-        nombre: 'Startup Inc',
-        correo: 'hello@startupinc.com',
-        telefono: '666666666',
-        fechaCreacion: '2023-04-20',
-        fechaActualizacion: '2023-08-05'
-    },
-    {
-        id: '5',
-        nombre: 'Global Enterprises',
-        correo: 'info@globalenterprises.com',
-        telefono: '111222333',
-        fechaCreacion: '2023-05-15',
-        fechaActualizacion: '2023-09-01'
-    }
-];
+// Estados con colores y etiquetas (igual que en CandidaturasList)
+const estadosConfig: Record<EstadoCandidatura, { color: string; label: string }> = {
+    [EstadoCandidatura.PENDIENTE]: { color: "warning", label: "Pendiente" },
+    [EstadoCandidatura.ENTREVISTA]: { color: "info", label: "Entrevista" },
+    [EstadoCandidatura.SEGUNDA_ENTREVISTA]: { color: "info", label: "Segunda Entrevista" },
+    [EstadoCandidatura.EN_PROCESO]: { color: "primary", label: "En Proceso" },
+    [EstadoCandidatura.ACEPTADA]: { color: "success", label: "Aceptada"},
+    [EstadoCandidatura.RECHAZADA]: { color: "error", label: "Rechazada"},
+    [EstadoCandidatura.ARCHIVADA]: {color:"default", label: "Archivada"}
+};
+
+// Tipo ChipColor para evitar castings
+type ChipColor = 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
+
 
 /**
  * Componente que muestra los detalles de una empresa específica
  * Recibe el ID de la empresa a través de los parámetros de la URL
  */
-const EmpresaDetail = () => {
+const EmpresaDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const {user} = useAuthStore();
     
     const [empresa, setEmpresa] = useState<Empresa | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Estado para las canidatuas asociadas
+    const [candidaturas, setCandidaturas] = useState<Candidatura[]>([]);
+    const [loadingCandidaturas, setLoadingCandidaturas] = useState(false);
+    const [errorCandidaturas, setErrorCandidaturas] = useState<string | null>(null);
+
+    // Cargar los datos de la empresa
     useEffect(() => {
-        // Simulación de carga de datos (reemplazar por llamada a API)
-        setLoading(true);
-        setTimeout(() => {
-            const foundEmpresa = mockEmpresas.find(emp => emp.id === id);
-            if (foundEmpresa) {
-                setEmpresa(foundEmpresa);
-                setError(null);
-            } else {
-                setEmpresa(null);
-                setError('Empresa no encontrada');
+        const fetchEmpresa = async () => {
+            setLoading(true);
+            try {
+                const data = await empresasService.getEmpresaById(id as string);
+                setEmpresa(data);
+            } catch (err:any) {
+                console.error('Error al cargar empresa:', err);
+                setError('Error al cargar los datos de la empresa. Por favor, intetalo de nuevo.');
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
-        }, 1000);
+        };
+
+        fetchEmpresa();
     }, [id]);
 
-    // Volver a la lista de empresas
-    const handleBack = () => {
-        navigate('/empresas');
-    };
+    // Cargar las candidaturas asociadas a esta empresa
+    useEffect(() =>{
+        if(!id) return;
 
-    // Ir a la página de edición
-    const handleEdit = () => {
-        if (empresa) {
-            // En una implementación real, navegar a la página de edición
-            console.log('Editar empresa', empresa.id);
-            // navigate(`/empresas/${empresa.id}/edit`);
+        const fetchCandidaturas = async () =>{
+            setLoadingCandidaturas(true);
+            try {
+                // Usar el endpoint de busqueda filtrado por empresa
+                const response = await candidaturasService.buscar(
+                    undefined, //estado
+                    empresa?.nombre, //nombre de la empresa
+                    undefined, //fechaDesde
+                    undefined, //fechaHasta
+                    undefined, //q
+                    0, //page
+                    10 //size
+                );
+
+                if(response && response.content){
+                    setCandidaturas(response.content);
+                }
+            } catch (err: any) {
+                console.error('Error al cargar candidaturas:', err);
+                setErrorCandidaturas('No se pudieron cargar las candidaturas asociadas a esta empresa.');
+            } finally {
+                setLoadingCandidaturas(false);
+            }
+        };
+
+        if(empresa){
+            fetchCandidaturas();
         }
+    }, [id, empresa]);
+
+    // Manejador para ver detalles de una candidatura
+    const handleViewCandidatura = (candidaturaId: string) => {
+        navigate(`/candidaturas/${candidaturaId}`);
     };
 
-    // Renderizar esqueleto durante la carga
-    if (loading) {
+    if(loading){
         return (
-            <Box sx={{ p: 3 }}>
-                <Button 
-                    startIcon={<ArrowBackIcon />} 
-                    onClick={handleBack}
-                    sx={{ mb: 3 }}
-                >
-                    Volver a la lista
-                </Button>
-                <Paper sx={{ p: 3 }}>
-                    <Skeleton variant="text" height={60} width="50%" />
-                    <Skeleton variant="text" height={30} width="30%" sx={{ mt: 2 }} />
-                    <Skeleton variant="text" height={30} width="40%" sx={{ mt: 1 }} />
-                    <Skeleton variant="text" height={30} width="35%" sx={{ mt: 1 }} />
-                    <Skeleton variant="rectangular" height={100} sx={{ mt: 3 }} />
-                </Paper>
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems:'center', height: '300px' }}>
+                <CircularProgress />
             </Box>
         );
     }
 
-    // Mostrar mensaje de error si la empresa no existe
-    if (error || !empresa) {
+    if(error){
         return (
-            <Box sx={{ p: 3 }}>
-                <Button 
-                    startIcon={<ArrowBackIcon />} 
-                    onClick={handleBack}
-                    sx={{ mb: 3 }}
+            <Box sx={{ maxWidth: '800px', mx: 'auto', p:2 }}>
+                <Alert severity='error' sx={{ mb: 3 }}>
+                    {error}
+                </Alert>
+                <Button
+                    startIcon={<ArrowBackIcon />}
+                    variant="outlined"
+                    onClick={() => navigate('/empresas')}
                 >
-                    Volver a la lista
+                    Volver a Empresas
                 </Button>
-                <Paper sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography variant="h5" color="error" gutterBottom>
-                        {error || 'Error al cargar la empresa'}
-                    </Typography>
-                    <Typography variant="body1">
-                        No se pudo encontrar la empresa solicitada. Por favor, vuelve a la lista e intenta de nuevo.
-                    </Typography>
-                </Paper>
+            </Box>
+        );
+    }
+
+    if(!empresa){
+        return(
+            <Box sx={{ maxWidth: '800px', mx: 'auto', p:2 }}>
+                <Alert severity="info">No se encontro la empresa solicitada</Alert>
+                <Button
+                    startIcon={<ArrowBackIcon />}
+                    variant="outlined"
+                    onClick={() => navigate('/empresas')}
+                    sx={{ mt:2 }}
+                >
+                    Volver a Empresas
+                </Button>
             </Box>
         );
     }
 
     return (
-        <Box sx={{ p: 3 }}>
-            {/* Barra superior con acciones */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                <Button 
-                    startIcon={<ArrowBackIcon />} 
-                    onClick={handleBack}
-                >
-                    Volver a la lista
-                </Button>
-                <Tooltip title="Editar empresa">
-                    <IconButton 
-                        color="primary" 
-                        onClick={handleEdit}
-                        size="large"
-                    >
-                        <EditIcon />
-                    </IconButton>
-                </Tooltip>
-            </Box>
-
-            {/* Tarjeta principal con información de la empresa */}
-            <Card>
-                <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <BusinessIcon fontSize="large" color="primary" sx={{ mr: 2 }} />
-                        <Typography variant="h4">
-                            {empresa.nombre}
+        <Box sx={{
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center'
+        }}>
+            <Box sx={{
+                maxWidth: '800px',
+                width: '100%',
+                mx: 'auto',
+                p: 2
+            }}>
+                <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                        <IconButton
+                            color="primary"
+                            onClick={() => navigate('/empresas')}
+                        >
+                            <ArrowBackIcon />
+                        </IconButton>
+                        <Typography variant='h4' component="h1">
+                            Detalles de Empresa
                         </Typography>
                     </Box>
-                    
-                    <Divider sx={{ my: 2 }} />
-                    
-                    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 3 }}>
-                        {/* Información de contacto */}
-                        <Box sx={{ flex: 1 }}>
-                            <Typography variant="h6" gutterBottom>
-                                Información de contacto
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={<EditIcon />}
+                        onClick={() => navigate(`/empresas/${id}/edit`)}
+                    >
+                        Editar
+                    </Button>
+                </Box>
+
+                <Card sx={{ mb:4 }}>
+                    <CardContent sx={{ p:3}}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+                            <BusinessIcon sx={{ fontSize: 40, mr: 2, color: 'primary.main' }} />
+                            <Typography variant="h5" component="div">
+                                {empresa.nombre}
                             </Typography>
-                            
-                            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                                <EmailIcon color="action" sx={{ mr: 2 }} />
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Correo electrónico
+                        </Box>
+
+                        <Divider sx={{ my: 3 }} />
+
+                        <Box sx={{ 
+                            mt: 3, 
+                            display: 'flex', 
+                            flexDirection: {xs: 'column', md: 'row'}, 
+                            gap: 4,
+                            justifyContent: 'center' 
+                            }}>
+                            {/* Informacion de contacto */}
+                            <Box sx={{ 
+                                flex: '0 1 450px',
+                                bgcolor: 'background.paper',
+                                p: 3,
+                                borderRadius: 2,
+                                border: 1,
+                                borderColor: 'divider',
+                                boxShadow: 1
+                                }}>
+                                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 'medium' }}>
+                                        Información de Contacto
                                     </Typography>
+                                    
+                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                <EmailIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                                    <Typography variant="body1" color="text.secondary" component="span">
+                                        Correo:
+                                    </Typography>
+                                        &nbsp;
                                     <Typography variant="body1">
-                                        {empresa.correo}
+                                        {empresa.correo || 'No especificado'}
                                     </Typography>
                                 </Box>
                             </Box>
-                            
-                            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                                <PhoneIcon color="action" sx={{ mr: 2 }} />
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Teléfono
+
+                            <Box sx={{ flex: 1}}>
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                    <PhoneIcon sx={{ mr: 1, color: 'text.secondary' }} />
+                                    <Typography variant="body1" color="text.secondary" component="span">
+                                        Teléfono:
                                     </Typography>
+                                        &nbsp;
                                     <Typography variant="body1">
-                                        {empresa.telefono}
+                                        {empresa.telefono || 'No especificado'}
                                     </Typography>
                                 </Box>
                             </Box>
                         </Box>
-                        
-                        {/* Fechas */}
-                        <Box sx={{ flex: 1 }}>
-                            <Typography variant="h6" gutterBottom>
-                                Fechas
-                            </Typography>
-                            
-                            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                                <CalendarTodayIcon color="action" sx={{ mr: 2 }} />
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Fecha de creación
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        {new Date(empresa.fechaCreacion).toLocaleDateString()}
-                                    </Typography>
-                                </Box>
-                            </Box>
-                            
-                            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                                <CalendarTodayIcon color="action" sx={{ mr: 2 }} />
-                                <Box>
-                                    <Typography variant="body2" color="text.secondary">
-                                        Última actualización
-                                    </Typography>
-                                    <Typography variant="body1">
-                                        {new Date(empresa.fechaActualizacion).toLocaleDateString()}
-                                    </Typography>
-                                </Box>
-                            </Box>
+                    </CardContent>
+                </Card>
+
+                {/* Seccion de candidaturas asociadas a esta empresa */}
+                <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
+                    Candidaturas asociadas a esta empresa
+                </Typography>
+
+                <Paper sx={{ p: 2, mb: 4 }}>
+                    {loadingCandidaturas ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py:3 }}>
+                            <CircularProgress size={30} />
                         </Box>
-                    </Box>
-                    
-                    {/* Sección para candidaturas relacionadas (se implementaría en una versión futura) */}
-                    <Divider sx={{ my: 3 }} />
-                    <Typography variant="h6" gutterBottom>
-                        Candidaturas relacionadas
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        No hay candidaturas asociadas a esta empresa.
-                    </Typography>
-                </CardContent>
-            </Card>
+                    ) : errorCandidaturas ?(
+                        <Alert severity='error'>
+                            {errorCandidaturas}
+                        </Alert>
+                    ) : candidaturas.length === 0 ? (
+                        <Alert security='info'>
+                            No hay candidaturas asociadas a esta empresa.
+                        </Alert>
+                    ) : (
+                        <TableContainer>
+                            <Table>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell align='center'>Cargo</TableCell>
+                                        <TableCell align='center'>Fecha</TableCell>
+                                        <TableCell align='center'>Estado</TableCell>
+                                        <TableCell align='center'>Acciones</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {candidaturas.map((candidatura) => (
+                                        <TableRow key={candidatura.id} hover>
+                                            <TableCell align='center'>{candidatura.cargo}</TableCell>
+                                            <TableCell align='center'>
+                                                {new Date(candidatura.fecha).toLocaleDateString()}
+                                            </TableCell>
+                                            <TableCell align='center'>
+                                                <Chip 
+                                                    label={estadosConfig[candidatura.estado].label}
+                                                    color={estadosConfig[candidatura.estado].color as ChipColor}
+                                                    size='small'
+                                                />
+                                            </TableCell>
+                                            <TableCell align='center'>
+                                                <Tooltip title="Ver detalles">
+                                                    <IconButton
+                                                        size='small'
+                                                        onClick={() => handleViewCandidatura(candidatura.id)}
+                                                    >
+                                                        <VisibilityIcon fontSize='small' />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    )}
+                </Paper>
+            </Box>
         </Box>
     );
 };

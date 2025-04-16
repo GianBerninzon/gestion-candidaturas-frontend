@@ -1,12 +1,15 @@
 import useAuthStore from '@/store/authStore';
 import { JSX, lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import EmpresasList from '../pages/empresas/EmpresasList';
+import ReclutadorForm from '@/pages/reclutadores/ReclutadorForm';
+
 
 // Componentes de carga
 const Loading = () => <div>Cargando...</div>
 
 // Layouts
-const MainLayout = lazy(() => import('../components/layout/MainLayout'));
+const MainLayout = lazy(() => import('../MainLayout'));
 
 // Paginas de autenticacion
 const Login = lazy(() => import('../pages/auth/Login'));
@@ -20,9 +23,11 @@ const CandidaturasList = lazy(() => import('../pages/candidaturas/CandidaturasLi
 const CandidaturaDetail = lazy(() => import('../pages/candidaturas/CandidaturaDetail'));
 const CandidaturaForm = lazy(() => import('../pages/candidaturas/CandidaturaForm'));
 
-// Paginas de empresas
-const EmpresasList = lazy(() => import('../pages/empresas/EmpresasList'));
+{/* Rutas para empresas */}
+const EmpresaForm = lazy(() => import('../pages/empresas/EmpresaForm'));
 const EmpresaDetail = lazy(() => import('../pages/empresas/EmpresaDetail'));
+//const EmpresasList = lazy(() => import('../pages/empresas/EmpresasList'));
+
 
 // Paginas de reclutadores
 const ReclutadoresList = lazy(() => import('../pages/reclutadores/ReclutadoresList'));
@@ -64,13 +69,17 @@ const AppRoutes = () => {
                             {/* Ruta de empresas */}
                             <Route path="empresas">
                                 <Route index element={<EmpresasList />} />
+                                <Route path="new" element={<EmpresaForm />} />
                                 <Route path=":id" element={<EmpresaDetail />} />
+                                <Route path=':id/edit' element={<EmpresaForm />} />
                             </Route>
 
                             {/* Rutas de reclutadores */}
                             <Route path="reclutadores">
                                 <Route index element={<ReclutadoresList />} />
+                                <Route path="new" element={<ReclutadorForm />} />
                                 <Route path=":id" element={<ReclutadorDetail />} />
+                                <Route path=":id/edit" element={<ReclutadorForm />} />
                             </Route>
                         </Route>
 

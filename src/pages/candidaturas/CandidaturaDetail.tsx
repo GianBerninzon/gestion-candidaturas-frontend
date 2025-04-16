@@ -1,4 +1,4 @@
-import { Candidatura, EstadoCandidatura } from "@/types";
+import { Candidatura, EstadoCandidatura, Reclutador } from "@/types";
 import candidaturasService from "@/services/candidaturasService";
 import {
     ArrowBack as ArrowBackIcon,
@@ -26,6 +26,7 @@ import {
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import reclutadoresService from "@/services/reclutadoresService";
 
 
 
@@ -63,6 +64,7 @@ const CandidaturaDetail = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [reclutadoresInfo, setReclutadoresInfo] = useState<Reclutador[]>([]);
     
     useEffect(() => {
         const fetchCandidatura = async () => {
@@ -76,6 +78,17 @@ const CandidaturaDetail = () => {
                 setLoading(true);
                 const candidaturaData = await candidaturasService.getCandidaturaById(id);
                 setCandidatura(candidaturaData);
+
+                // Cargar reclutadores asociados
+                if(candidaturaData.reclutadoresIds && candidaturaData.reclutadoresIds.length > 0){
+                    const reclutadoresData = await Promise.all(
+                        candidaturaData.reclutadoresIds.map(reclId => 
+                            reclutadoresService.getReclutadorById(reclId)
+                        )
+                    );
+                    setReclutadoresInfo(reclutadoresData);
+                }
+
                 setLoading(false);
             } catch (error) {
                 console.error('Error al cargar la candidatura:', error);
@@ -113,7 +126,7 @@ const CandidaturaDetail = () => {
     
     // Navegar a la página de detalle de la empresa asociada
     const handleViewEmpresa = () => {
-        if (candidatura) {
+        if (candidatura?.empresa?.id) {
             navigate(`/empresas/${candidatura.empresa.id}`);
         }
     };
@@ -249,7 +262,7 @@ const CandidaturaDetail = () => {
                                 <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
                                     <CalendarMonthIcon sx={{ mr: 2, color: 'text.secondary' }} />
                                     <Typography variant="body1">
-                                        Fecha: {candidatura.fecha}
+                                        Fecha: {new Date(candidatura.fecha).toLocaleDateString()}
                                     </Typography>
                                 </Box>
                                 
@@ -258,7 +271,7 @@ const CandidaturaDetail = () => {
                                     <Box sx={{ display: 'flex', alignItems: 'center', pl: 2 }}>
                                         <BusinessIcon sx={{ mr: 2, color: 'text.secondary' }} />
                                         <Typography variant="body1" fontWeight="bold">
-                                            {candidatura.empresa.nombre}
+                                            {candidatura.empresa?.nombre || 'Sin empresa asignada'}
                                         </Typography>
                                     </Box>
                                     <Tooltip title="Ver detalles de la empresa">
@@ -320,9 +333,9 @@ const CandidaturaDetail = () => {
                         Reclutadores asociados
                     </Typography>
                     
-                    {candidatura.reclutadores && candidatura.reclutadores.length > 0 ? (
+                    {reclutadoresInfo && reclutadoresInfo.length > 0 ? (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center', mb: 3 }}>
-                            {candidatura.reclutadores.map(reclutador => (
+                            {reclutadoresInfo.map(reclutador => (
                                 <Paper 
                                     key={reclutador.id}
                                     sx={{ 

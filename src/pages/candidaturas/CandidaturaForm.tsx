@@ -1,4 +1,4 @@
-import { CandidaturaDTO, Empresa, EstadoCandidatura } from "@/types";
+import { CandidaturaDTO, Empresa, EstadoCandidatura, Reclutador } from "@/types";
 import { 
     Alert, Button, CircularProgress, Paper, Typography,
     Autocomplete, 
@@ -9,18 +9,33 @@ import {
     DialogActions,
     Dialog,
     DialogTitle,
-    Chip
+    Chip,
+    IconButton,
+    ListItemText,
+    List,
+    ListItem,
+    FormControl,
+    InputLabel,
+    Select,
+    FormHelperText
 } from "@mui/material";
 import {
     Save as SaveIcon,
     ArrowBack as ArrowBackIcon,
     Add as AddIcon,
-    Business as BusinessIcon
+    Business as BusinessIcon,
+    LinkedIn as LinkedInIcon,
+    Person as PersonIcon,
+    Delete as DeleteIcon
 } from "@mui/icons-material";
 import { Box } from "@mui/system";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
+import empresasService from "@/services/empresasService";
+import candidaturasService from "@/services/candidaturasService";
+import reclutadoresService from "@/services/reclutadoresService";
+import _default from "@mui/material/InitColorSchemeScript";
 
 // Estados con colores y etiquetas
 const estadosConfig = {
@@ -33,43 +48,6 @@ const estadosConfig = {
     [EstadoCandidatura.ARCHIVADA]: {color: 'error', label: 'Cancel'}
 };
 
-//Datos mock para pruebas
-const mockEmpresas =[
-    {
-        id: '1',
-        nombre: 'Empresa ABC',
-        correo: 'empresa@abc.com',
-        telefono: '123456789',
-        fechaCreacion: '2022-01-01',
-        fechaActualizacion: '2022-01-01',
-    },
-    {
-        id: '2',
-        nombre: 'Corporacion XYZ',
-        correo: 'corporacion@xyz.com',
-        telefono: '987654321',
-        fechaCreacion: '2022-01-01',
-        fechaActualizacion: '2022-01-01'
-    },
-    {
-        id: '3',
-        nombre: 'Tech Solutions',
-        correo: 'tech@solution.com',
-        telefono: '555555555',
-        fechaCreacion: '2022-01-01',
-        fechaActualizacion: '2022-01-01'
-    }
-];
-
-const mockCandidaturas = {
-    id: '1',
-    empresaId: '1',
-    cargo: 'Desarrollador FrontEnd',
-    fecha: '2022-01-01',
-    estado: EstadoCandidatura.ENTREVISTA,
-    notas: 'Pendiente de segunda entrevista'
-};
-
 //Interfaz para los datos del formulario de empresa
 interface EmpresaFormData{
     nombre: string;
@@ -77,10 +55,11 @@ interface EmpresaFormData{
     telefono: string;
 }
 
-interface EmpresaFormData{
+//Interfaz para los datos del formulario de reclutador
+interface ReclutadorFormData{
     nombre: string;
-    correo: string;
-    telefono: string;
+    linkinUrl: string;
+    empresaId: string;
 }
 
 const CandidaturaForm = () => {
@@ -91,10 +70,17 @@ const CandidaturaForm = () => {
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [empresas, setEmpresas] = useState<Empresa[]>([]);
+    const [reclutadores, setReclutadores] = useState<Reclutador[]>([]);
+    const [selectedReclutadores, setSelectedReclutadores] = useState<Reclutador[]>([]);
     const [openNuevaEmpresa, setOpenNuevaEmpresa] = useState(false);
+    const [openNuevoReclutador, setOpenNuevoReclutador] = useState(false);
+    const [creatingEmpresa, setCreatingEmpresa] = useState(false);
+    const [creatingReclutador, setCreatingReclutador] = useState(false);
+    const [loadingReclutadores, setLoadingReclutadores] = useState(false);
+    const [selectedEmpresaId, setSelectedEmpresaId] = useState<string>('');
 
     // Form para la candidatura principal
-    const {control, handleSubmit, reset, setValue, formState: { errors } } = useForm<CandidaturaDTO>({
+    const {control, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CandidaturaDTO>({
         defaultValues: {
             empresaId: '',
             cargo: '',
@@ -104,8 +90,11 @@ const CandidaturaForm = () => {
         }
     });
 
+    // Observar cambios en empresId para cargar reclutadores asociados
+    const watchEmpresaId = watch('empresaId');
+
     // Form para nueva empresa (dialogo)
-    const { control: controlEmpresa, handleSubmit: handleSubmitEmpresa, reset: resetEmpresa } = useForm<EmpresaFormData>({
+    const { control: controlEmpresa, handleSubmit: handleSubmitEmpresa, reset: resetEmpresa, formState: { errors: errorsEmpresa} } = useForm<EmpresaFormData>({
         defaultValues: {
             nombre: '',
             correo: '',
@@ -113,46 +102,108 @@ const CandidaturaForm = () => {
         }
     });
 
+    // Form para nuevo reclutador (dialogo)
+    const { control: controlReclutador, handleSubmit: handleSubmitReclutador, reset: resetReclutador,setValue: setValueReclutador, formState: { errors: errorsReclutador} } = useForm<ReclutadorFormData>({
+        defaultValues: {
+            nombre: '',
+            linkinUrl: '',
+            empresaId: ''
+        }
+    });
+
     //Cargar los datos iniciales
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true);
+            setError(null);
             try {
-                // En un entrorno real hariamos estas a la API
-                // const empresasResponse = await apiService.get('/api/empresas');
-                // setEmpresa(empresasResponse);
+                // Cargar empresas desde la API
+                const empresasResponse = await empresasService.getEmpresas(0,100);
+                if(empresasResponse && empresasResponse.content){
+                    setEmpresas(empresasResponse.content);
+                }
 
-                // Simulacion con datos mock
-                setTimeout(() => {
-                    setEmpresas(mockEmpresas);
+                // Si es edicion, cargar datos de la candidatura
+                if(id) {
+                    const candidaturaData = await candidaturasService.getCandidaturaById(id);
 
-                    // Si es edicion, cargar datos de la candidatura
-                    if (id) {
-                        // const cadidaturaResponse = await apiService.get(`/api/candidaturas/${id}`);
-                        // const candidaturaData = candidaturaResponse;
+                    // Formato de fecha para el input type="date"
+                    const fechaFormateada = new Date(candidaturaData.fecha)
+                        .toISOString()
+                        .split('T')[0];
 
-                        // Simular carga de candidatura para edicion
-                        const candidaturaData = mockCandidaturas;
-                        reset({
-                            empresaId: candidaturaData.empresaId,
-                            cargo: candidaturaData.cargo,
-                            fecha: candidaturaData.fecha,
-                            estado: candidaturaData.estado,
-                            notas: candidaturaData.notas
-                        });
+                    // Establecer valores en el formulario
+                    reset({
+                        empresaId: candidaturaData.empresa?.id || '',
+                        cargo: candidaturaData.cargo,
+                        fecha: fechaFormateada,
+                        estado: candidaturaData.estado,
+                        notas: candidaturaData.notas
+                    });
+
+                    // Si tiene empresa, establecer el ID para carga reclutadores
+                    if(candidaturaData.empresa?.id) {
+                        setSelectedEmpresaId(candidaturaData.empresa.id);
                     }
 
-                    setLoading(false);
-                },1000);
-            }catch (err){
+                    // Si tiene reclutadores asociados, cargarlos
+                    if(candidaturaData.reclutadoresIds && candidaturaData.reclutadoresIds.length > 0){
+                        // Obtener detalles de cada reclutador
+                        const reclutadoresData = await Promise.all(
+                            candidaturaData.reclutadoresIds.map(reclId =>
+                                reclutadoresService.getReclutadorById(reclId)
+                            )
+                        );
+                        setSelectedReclutadores(reclutadoresData);
+                    }
+                }
+            }catch (err: any){
                 console.error('Error al cargar los datos', err);
-                setError('Errro al cargar los datos necesarios, Intente nuevamente.');
+                let erroMsg = 'Error al cargar los datos necesarios. Intente nuevamente.';
+
+                if(err.response?.message){
+                    erroMsg = err.response.data.message;
+                }else if(err.message){
+                    erroMsg = err.message;
+                }
+
+                setError(erroMsg);
+            }finally{
                 setLoading(false);
             }
         };
 
         fetchData();
     }, [id, reset]);
+
+    // Cargar reclutadores cuando cambia la empresa seleccionada
+    useEffect(() => {
+        const fetchReclutadores = async () => {
+            if(!watchEmpresaId){
+                setReclutadores([]);
+                return;
+            }
+
+            setSelectedEmpresaId(watchEmpresaId);
+            setLoadingReclutadores(true);
+
+            try {
+                // Cargar reclutadores de la empresa seleccionada
+                const response = await reclutadoresService.getReclutadoresByEmpresa(watchEmpresaId, 0, 50);
+                if(response && response.content){
+                    setReclutadores(response.content);
+                }
+            } catch (err) {
+                console.error('Error al cargar reclutadores:', err);
+            }finally{
+                setLoadingReclutadores(false);
+            }
+        };
+
+        if(watchEmpresaId){
+            fetchReclutadores();
+        }
+    }, [watchEmpresaId]);
 
     //Enviar formulario principal
     const onSubmit= async (data: CandidaturaDTO) => {
@@ -161,52 +212,71 @@ const CandidaturaForm = () => {
         setSuccess(null);
 
         try {
-            //En un entorno real:
-            // let response;
-            // if (id) {
-            //     response = await apiService.put(`/api/candidaturas/${id}`, data);
-            // } else {
-            //     response = await apiService.post('/api/candidaturas', data);
-            // }
+            // Guardar la candidatura en la API
+            let candidatura;
+            if(id){
+                await candidaturasService.updateCandidatura(id, data);
+            }else {
+                candidatura = await candidaturasService.createCandidatura(data);
+            }
 
-            // Simulacion
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // Asociar reclutadores seleccionados a la candidatura
+            if(selectedReclutadores.length > 0){
+                let candidaturaId: string;
+
+                if(id){
+                    candidaturaId = id; // Usamos el ID de la URL (edicion)
+                }else if(candidatura && candidatura.id){
+                    candidaturaId = candidatura.id; // Usamos el ID de la candidatura recien creada
+                }else {
+                    console.error('No se pudo determinar el ID de la candidatura');
+                    throw new Error('No se pudo determinar el ID de la candidatura');
+                }
+                
+                // Asociar
+                for(const reclutador of selectedReclutadores){
+                    await candidaturasService.asignarReclutador(candidaturaId, reclutador.id);
+                }
+            }
 
             setSuccess(`Candidatura ${id ? 'actualizada' : 'creada'} correctamente`);
-            setSaving(false);
 
             // Redigir despues de un breve retraso
             setTimeout(() => {
                 navigate('/candidaturas');
             }, 1500);
-        }catch (err){
+        }catch (err: any){
             console.error('Error al guarda candidatura', err);
-            setError(`Error al ${id ? 'actualizar' : 'crear'} la candidatura. Verifique los datos e intente nuevamente.`);
+
+            let errMsg = `Error al ${id ? 'actualizar': 'crear'} la candidatura. Verifica los datos e intenta nuevamente.`;
+
+            if(err.response?.data?.message){
+                errMsg = err.response.data.message;
+            }else if(err.message){
+                errMsg = err.message;
+            }
+
+            setError(errMsg);
+        }finally{
             setSaving(false);
         }
     };
 
     // Crear una nueva empresa
     const handleCreateEmpresa = async (data: EmpresaFormData) => {
+        setCreatingEmpresa(true);
+
         try {
-            // En un entorno real:
-            // const response = await apiService.post('/api/empresas/crear-con-candidatura', data);
 
-            // Simulacion
-            await new Promise (resolve => setTimeout(resolve, 1000));
-
-            // Crear una nueva con ID generado
-            const newEmpresa: Empresa = {
-                id: `new-${Date.now}`,
+            //Crear empresa usando el endpoint especifico para crear con candidatura
+            const newEmpresa = await empresasService.createEmpresaWithCandidatura({
                 nombre: data.nombre,
                 correo: data.correo,
-                telefono: data.telefono,
-                fechaCreacion: new Date().toISOString(),
-                fechaActualizacion: new Date().toISOString()
-            };
-
-            //Actualizar la lista de empresas
-            setEmpresas([...mockEmpresas, newEmpresa]);
+                telefono: data.telefono
+            });
+            
+            // Actualizar la lista de empresas
+            setEmpresas(prevEmpresas => [...prevEmpresas, newEmpresa]);
 
             // Seleccionar la nueva empresa en el formulario principal
             setValue('empresaId', newEmpresa.id);
@@ -214,10 +284,88 @@ const CandidaturaForm = () => {
             // Cerrar el dialogo y resetear su formulario
             setOpenNuevaEmpresa(false);
             resetEmpresa();
-        }catch (err){
+
+            // Mostrar mensaje de exito
+            setSuccess('Empresa creada correctamente');
+        }catch (err: any){
             console.error('Error al crear empresa', err);
-            setError(`Error al crear la empresa. Intente nuevamente.`);
+
+            let errorMsg = 'Error al crear la empresa. Intente nuevamente.';
+
+            if(err.response?.data?.message){
+                errorMsg = err.response.data.message;
+            }else if(err.message){
+                errorMsg = err.message;
+            }
+
+            setError(errorMsg);;
+        }finally{
+            setCreatingEmpresa(false);
         }
+    };
+
+    // Crear un nuevo reclutador
+    const handleCreateReclutador = async (data: ReclutadorFormData) => {
+        setCreatingReclutador(true);
+        
+        try {
+            // Usar la empresa seleccionado si esta disponible
+            const empresaId = selectedEmpresaId || data.empresaId;
+
+            // Crear reclutador usando el endpoint para crear con candidatura
+            const newReclutador = await reclutadoresService.createReclutadorWithCandidatura({
+                nombre: data.nombre,
+                linkinUrl: data.linkinUrl,
+                empresaId: empresaId
+            });
+
+            // Actualizar la lista de reclutadores
+            setReclutadores(prevReclutadores => [...prevReclutadores, newReclutador]);
+
+            // Añadir a la lista de reclutadores seleccionados
+            setSelectedReclutadores(prevReclutadores => [...prevReclutadores, newReclutador]);
+
+            // Cerrar el dialogo y resetear su formulario
+            setOpenNuevoReclutador(false);
+            resetReclutador();
+
+            // Mostar mensaje de exito
+            setSuccess('Reclutador creado y asociado correctamente');
+        } catch (err: any) {
+            console.error('Error al crear reclutador', err);
+
+            let errMsg = 'Error al crear reclutador. Intente nuevamente.';
+
+            if(err.response?.data?.message){
+                errMsg = err.response.data.message;
+            }else if(err.message){
+                errMsg = err.message;
+            }
+
+            setError(errMsg);
+        }finally{
+            setCreatingReclutador(false);
+        }
+    };
+
+    // Añadir un reclutador existente a la lista de seleccionados
+    const handleAddReclutador = (reclutador : Reclutador) => {
+        // Verificar si ys esta seleccionado
+        if(!selectedReclutadores.some(r => r.id === reclutador.id)){
+            setSelectedReclutadores([...selectedReclutadores, reclutador]);
+        }
+    };
+
+    //Eliminar un reclutador de la lista de seleccionados
+    const handleRemoveReclutador = (reclutadorId : string) => {
+        setSelectedReclutadores(selectedReclutadores.filter(r => r.id !== reclutadorId));
+    };
+
+    // Abrir dialogo para crear reclutador
+    const handleOpenNuevoReclutador = () => {
+        // Establecer la empresa actual como predeterminada
+        setValueReclutador('empresaId', selectedEmpresaId);
+        setOpenNuevoReclutador(true);
     };
 
     return (
@@ -269,10 +417,12 @@ const CandidaturaForm = () => {
                                         <Autocomplete
                                             options={empresas}
                                             getOptionLabel={(option) => option.nombre}
-                                            isOptionEqualToValue={(options, value) => options.id === value.id}
+                                            isOptionEqualToValue={(option, value) => option.id === value.id}
                                             value={empresas.find(empresa => empresa.id === field.value) || null}
                                             onChange={(_, newValue) => {
                                                 field.onChange(newValue ? newValue.id : '');
+                                                // Al cambiar la empresa, limpiamos los reclutadores seleccionados
+                                                setSelectedReclutadores([]);
                                             }}
                                             renderInput={(params) => (
                                                 <TextField
@@ -280,7 +430,8 @@ const CandidaturaForm = () => {
                                                     label="Empresa"
                                                     variant="outlined"
                                                     fullWidth
-                                                    error={!!errors.empresaId?.message}
+                                                    error={!!errors.empresaId}
+                                                    helperText={errors.empresaId?.message}
                                                     InputProps={{
                                                         ...params.InputProps,
                                                         startAdornment: (
@@ -310,14 +461,123 @@ const CandidaturaForm = () => {
 
                         <Divider sx={{ my:3 }} />
 
+                        {/* Seccion de reclutadores */}
+                        <Typography variant="h6" gutterBottom>
+                            Reclutadores
+                        </Typography>
+                        <Box sx={{ mb: 3}}>
+                            {selectedEmpresaId ? (
+                                <>
+                                    {/* Lista de reclutadores seleccionados */}
+                                    {selectedReclutadores.length > 0 && (
+                                        <Box sx={{ mb:2 }}>
+                                            <Typography variant="subtitle2" gutterBottom>
+                                                Reclutadores asociados:
+                                            </Typography>
+                                            <List dense>
+                                                {selectedReclutadores.map(reclutador => (
+                                                     <ListItem
+                                                     key={reclutador.id}
+                                                     secondaryAction={
+                                                         <IconButton
+                                                             edge="end"
+                                                             onClick={() => handleRemoveReclutador(reclutador.id)}
+                                                             size="small"
+                                                         >
+                                                             <DeleteIcon fontSize="small"/>
+                                                         </IconButton>
+                                                     }
+                                                 >
+                                                     <ListItemText 
+                                                         primary={
+                                                             <Box sx={{ display: ' flex', alignItems: 'center' }}>
+                                                                 <PersonIcon fontSize="small" sx={{mr:1, color: 'primary.main'}}/>
+                                                                 {reclutador.nombre}
+                                                             </Box>
+                                                         }
+                                                         secondary={
+                                                             reclutador.linkinUrl && (
+                                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                                                    <LinkedInIcon fontSize="small" sx={{ mr:0.5, color: '#0077b5'}} />
+                                                                    <a
+                                                                        href={reclutador.linkinUrl.startsWith('https') ? reclutador.linkinUrl : `https://${reclutador.linkinUrl}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        style={{fontSize: '0.8rem', color: '#0077b5' }}
+                                                                    >
+                                                                        Perfil LinkedIn
+                                                                    </a>
+                                                                </Box>
+                                                             )
+                                                         }
+                                                     />
+                                                 </ListItem>
+                                                ))}
+                                            </List>
+                                        </Box>
+                                    )}
+
+                                    {/* Selector y boton para agregar reclutadores */}
+                                    <Box sx={{ display: 'flex', gap: 1, alignItems:'flex-start' }}>
+                                        <Autocomplete 
+                                            options={reclutadores.filter(r => !selectedReclutadores.some(sr => sr.id === r.id))}
+                                            getOptionLabel={(option) => option.nombre}
+                                            onChange={(_, newValue) => {
+                                                if(newValue){
+                                                    handleAddReclutador(newValue);
+                                                }
+                                            }}
+                                            renderInput={(params) => (
+                                                <TextField
+                                                    {...params}
+                                                    label="Seleccionar Reclutador"
+                                                    variant="outlined"
+                                                    fullWidth
+                                                    InputProps={{
+                                                        ...params.InputProps,
+                                                        startAdornment:(
+                                                            <>
+                                                                <PersonIcon color="action" sx={{mr:1}}/>
+                                                                {params.InputProps.startAdornment}
+                                                            </>
+                                                        )
+                                                    }}
+                                                />
+                                            )}
+                                            sx={{ width: '100%' }}
+                                            loading={loadingReclutadores}
+                                            loadingText="Cargando Reclutadores..."
+                                            noOptionsText="No hay Reclutadores disponibles"
+                                        />
+                                        <Button
+                                            variant="contained"
+                                            color="secondary"
+                                            startIcon={<AddIcon />}
+                                            onClick={handleOpenNuevoReclutador}
+                                            sx={{ mt: 1 }}
+                                            disabled={!selectedEmpresaId}
+                                        >
+                                            Nuevo
+                                        </Button>
+                                    </Box>
+                                </>
+                            ) : (
+                                <Alert severity="info">
+                                    Seleccione una empresa para gestionar reclutadores
+                                </Alert>
+                            )}
+                        </Box>
+
+                        <Divider sx={{ my: 3 }} />
+
                         {/* Detalles de la Candidatura */}
                         <Typography variant="h6" gutterBottom>
-                                    Detalles de la Candidatura
+                            Detalles de la Candidatura
                         </Typography>
                         <Box sx={{ 
-                            display: 'grid', 
-                            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
-                            gap: 3 
+                                display: 'grid', 
+                                gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
+                                gap: 3 
                         }}>
                             {/* Primer campo (Cargo) */}
                             <Box>
@@ -327,12 +587,12 @@ const CandidaturaForm = () => {
                                     rules={{ required: 'El cargo es obligatorio' }}
                                     render={({ field }) => (
                                         <TextField
-                                        label="Cargo / Puesto"
-                                        variant="outlined"
-                                        fullWidth
-                                        error={!!errors.cargo}
-                                        helperText={errors.cargo?.message}
-                                        {...field}
+                                            label="Cargo / Puesto"
+                                            variant="outlined"
+                                            fullWidth
+                                            error={!!errors.cargo}
+                                            helperText={errors.cargo?.message}
+                                            {...field}
                                         />
                                     )}
                                 />
@@ -346,14 +606,14 @@ const CandidaturaForm = () => {
                                     rules={{ required: 'La fecha es obligatoria' }}
                                     render={({ field }) => (
                                         <TextField
-                                        label="Fecha de Aplicación"
-                                        type="date"
-                                        variant="outlined"
-                                        fullWidth
-                                        InputLabelProps={{ shrink: true }}
-                                        error={!!errors.fecha}
-                                        helperText={errors.fecha?.message}
-                                        {...field}
+                                            label="Fecha de Aplicación"
+                                            type="date"
+                                            variant="outlined"
+                                            fullWidth
+                                            InputLabelProps={{ shrink: true }}
+                                            error={!!errors.fecha}
+                                            helperText={errors.fecha?.message}
+                                            {...field}
                                         />
                                     )}
                                 />
@@ -437,7 +697,7 @@ const CandidaturaForm = () => {
             {/* Dialogo para crear nueva empresa */}
             <Dialog 
                 open={openNuevaEmpresa} 
-                onClose={() => setOpenNuevaEmpresa(false)}
+                onClose={() => !creatingEmpresa && setOpenNuevaEmpresa(false)}
                 maxWidth="sm"
                 fullWidth
             >
@@ -445,76 +705,205 @@ const CandidaturaForm = () => {
                 <form onSubmit={handleSubmitEmpresa(handleCreateEmpresa)}>
                 <DialogContent>
 
-                <Box sx={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
-                    gap: 2 
-                }}>
-                    <Box sx={{ gridColumn: { xs: '1', sm: 'span 2' } }}>
-                        <Controller
-                            name="nombre"
-                            control={controlEmpresa}
-                            rules={{ required: 'El nombre es obligatorio' }}
-                            render={({ field, fieldState }) => (
-                            <TextField
-                                label="Nombre de la Empresa"
-                                variant="outlined"
-                                fullWidth
-                                error={!!fieldState.error}
-                                helperText={fieldState.error?.message}
-                                {...field}
-                            />
-                            )}
-                        />
-                    </Box>
-
-                    <Box>
-                        <Controller
-                            name="correo"
-                            control={controlEmpresa}
-                            rules={{ 
-                                pattern: {
-                                    value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                                    message: 'Correo electrónico inválido'
-                                }
-                            }}
-                            render={({ field, fieldState }) => (
+                    <Box sx={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' },
+                        gap: 2 
+                    }}>
+                        <Box sx={{ gridColumn: { xs: '1', sm: 'span 2' } }}>
+                            <Controller
+                                name="nombre"
+                                control={controlEmpresa}
+                                rules={{ required: 'El nombre es obligatorio' }}
+                                render={({ field, fieldState }) => (
                                 <TextField
-                                    label="Correo Electrónico"
+                                    label="Nombre de la Empresa"
                                     variant="outlined"
                                     fullWidth
                                     error={!!fieldState.error}
                                     helperText={fieldState.error?.message}
                                     {...field}
+                                    disabled={creatingEmpresa}
                                 />
-                            )}
-                        />
-                    </Box>
+                                )}
+                            />
+                        </Box>
 
-                    <Box>
-                        <Controller
-                            name="telefono"
-                            control={controlEmpresa}
-                            render={({ field }) => (
-                                <TextField
-                                    label="Teléfono"
-                                    variant="outlined"
-                                    fullWidth
-                                    {...field}
-                                />
-                            )}
-                        />
+                        <Box>
+                            <Controller
+                                name="correo"
+                                control={controlEmpresa}
+                                rules={{ 
+                                    pattern: {
+                                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                                        message: 'Correo electrónico inválido'
+                                    }
+                                }}
+                                render={({ field, fieldState }) => (
+                                    <TextField
+                                        label="Correo Electrónico"
+                                        variant="outlined"
+                                        fullWidth
+                                        error={!!fieldState.error}
+                                        helperText={fieldState.error?.message}
+                                        {...field}
+                                        disabled={creatingEmpresa}
+                                    />
+                                )}
+                            />
+                        </Box>
+
+                        <Box>
+                            <Controller
+                                name="telefono"
+                                control={controlEmpresa}
+                                render={({ field }) => (
+                                    <TextField
+                                        label="Teléfono"
+                                        variant="outlined"
+                                        fullWidth
+                                        {...field}
+                                        disabled={creatingEmpresa}
+                                    />
+                                )}
+                            />
+                        </Box>
                     </Box>
-                </Box>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setOpenNuevaEmpresa(false)}>
                         Cancelar
                     </Button>
-                    <Button type="submit" variant="contained" color="primary">
-                        Crear Empresa
+                    <Button 
+                        type="submit" 
+                        variant="contained" 
+                        color="primary"
+                        disabled={creatingEmpresa}
+                        startIcon={creatingEmpresa ? <CircularProgress size={20} /> : null}
+                    >
+                        {creatingEmpresa ? 'Creando...' : 'Crear Empresa'}
                     </Button>
                 </DialogActions>
+                </form>
+            </Dialog>
+
+            {/* Dialogo para crear nuevo reclutador */}
+            <Dialog
+                open={openNuevoReclutador}
+                onClose={() => !creatingReclutador && setOpenNuevoReclutador(false)}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle>Crear Nuevo Reclutador</DialogTitle>
+                <form onSubmit={handleSubmitReclutador(handleCreateReclutador)}>
+                    <DialogContent>
+                        <Box sx={{
+                                display:'grid',
+                                gridTemplateColumns: {xs: '1fr'},
+                                gap: 2
+                        }}>
+                            <Box>
+                                <Controller 
+                                    name="nombre"
+                                    control={controlReclutador}
+                                    rules={{ required: 'El nombre es obligatorio' }}
+                                    render={({ field, fieldState }) => (
+                                        <TextField 
+                                            label="Nombre del Reclutador"
+                                            variant="outlined"
+                                            fullWidth
+                                            error={!!fieldState.error}
+                                            helperText={fieldState.error?.message}
+                                            {...field}
+                                            disabled={creatingReclutador}
+                                            InputProps={{
+                                                startAdornment: <PersonIcon color="action" sx={{ mr: 1 }}/>
+                                            }}
+                                        />
+                                    )}
+                                />
+                            </Box>
+                            <Box>
+                                <Controller 
+                                    name="linkinUrl"
+                                    control={controlReclutador}
+                                    rules={{
+                                        pattern: {
+                                            value: /^(https?:\/\/)?(www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+\/?$/,
+                                            message: 'URL de LinkedIn no válida (formato: linkedin.com/in/perfil)'
+                                        }
+                                    }}
+                                    render={({ field, fieldState}) => (
+                                        <TextField 
+                                            label="URL de LinkedIn"
+                                            variant="outlined"
+                                            fullWidth
+                                            error={!!fieldState.error}
+                                            helperText={fieldState.error?.message || 'Ejemplo: https://www.linkedin.com/in/perfil'}
+                                            {...field}
+                                            disabled={creatingReclutador}
+                                            InputProps={{
+                                                startAdornment: <LinkedInIcon color="action" sx={{ mr: 1, color: '#0077b5' }}/>
+                                            }}
+                                        />
+                                    )}
+                                />
+                            </Box>
+                            
+                            <Box>
+                                <Controller 
+                                    name="empresaId"
+                                    control={controlReclutador}
+                                    rules={{ required: 'La empresa es obligatoria'}}
+                                    render={({ field, fieldState}) => (
+                                        <FormControl 
+                                            fullWidth
+                                            error={!!fieldState.error}
+                                            disabled={creatingReclutador || !!selectedEmpresaId}
+                                        >
+                                            <InputLabel id="empresa-reclutador-label">Empresa</InputLabel>
+                                            <Select
+                                                labelId="empresa-reclutador-label"
+                                                label="Empresa"
+                                                {...field}
+                                            >
+                                                {empresas.map(empresa => (
+                                                    <MenuItem key={empresa.id} value={empresa.id}>
+                                                        {empresa.nombre}
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                            {fieldState.error && (
+                                                <FormHelperText>{fieldState.error.message}</FormHelperText>
+                                            )}
+                                            {!!selectedEmpresaId && (
+                                                <FormHelperText>
+                                                    El reclutador se asociará a la empresa seleccionada en el formulario principal
+                                                </FormHelperText>
+                                            )}
+                                        </FormControl>
+                                    )}
+                                />
+                            </Box>
+                        </Box>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button
+                            onClick={() => setOpenNuevoReclutador(false)}
+                            disabled={creatingReclutador}
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            color="primary"
+                            disabled={creatingReclutador}
+                            startIcon={creatingReclutador ? <CircularProgress size={20} /> : null}
+                        >
+                            {creatingReclutador ? 'Creando...' : 'Crear Reclutador'}
+                        </Button>
+                    </DialogActions>
                 </form>
             </Dialog>
         </Box>

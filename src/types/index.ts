@@ -1,29 +1,4 @@
-// Modelos basados en las entidades del backend
-
-export interface User {
-    id: string;
-    username: string;
-    email: string;
-    role: string;
-}
-
-export interface Empresa {
-    id: string;
-    nombre: string;
-    correo: string;
-    telefono: string;
-    fechaCreacion: string;
-    fechaActualizacion: string;
-}
-
-export interface Reclutador {
-    id: string;
-    nombre: string;
-    empresa: Empresa;
-    linkedinUrl?: string;
-    telefono?: string;
-}
-
+// Enumaracion de estados de candidatura
 export enum EstadoCandidatura{
     PENDIENTE = 'PENDIENTE',
     ENTREVISTA = "ENTREVISTA",
@@ -35,16 +10,77 @@ export enum EstadoCandidatura{
     
 }
 
+// Interfaz para datos de usuario
+export interface User {
+    id: string;
+    username: string;
+    email: string;
+    role: string;
+}
+
+// Interfaz relacionada con empresa
+export interface Empresa {
+    id: string;
+    nombre: string;
+    correo: string;
+    telefono: string;
+}
+
+export interface EmpresaDTO{
+    nombre: string;
+    correo?: string;
+    telefono?: string;
+}
+
+export interface EmpresaWithUsersDTO{
+    id: string;
+    nombre: string,
+    correo?: string;
+    telefono?: string;
+    usuariosAsociados: UserResumenDTO[];    
+}
+
+export interface UserResumenDTO{
+    id: string;
+    username: string;
+    numeroCandidaturas: number;
+}
+
+// Interfaz para datos de reclutadores
+export interface Reclutador {
+    id: string;
+    nombre: string;
+    empresa: Empresa;
+    linkinUrl?: string;
+}
+
+export interface ReclutadorDTO {
+    nombre: string;
+    linkinUrl: string;
+    empresaId: string;
+}
+
+export interface ReclutadorWithEmpresaDTO{
+    id: string;
+    nombre: string;
+    linkinUrl?: string;
+    empresa: Empresa;
+}
+
+// Interfaz para datos de candidatura completa
 export interface Candidatura {
     id: string;
-    empresa: Empresa;
+    empresa?: Empresa; 
     cargo: string;
     fecha: string;
     estado: EstadoCandidatura;
     notas: string;
+    empresaId?: string; 
     reclutadores?: Reclutador[];
+    user?: User; // Usuario asociado a la candidatura
 }
 
+// Interfaz para datos de pregunta
 export interface Pregunta {
     id: string;
     pregunta: string;
@@ -63,7 +99,6 @@ export interface RegisterRequest {
     username: string;
     email: string;
     password: string;
-    rol?: string;
 }
 
 export interface CandidaturaDTO {
@@ -74,18 +109,17 @@ export interface CandidaturaDTO {
     notas: string;
 }
 
-export interface EmpresaDTO {
-    nombre: string;
-    correo: string;
-    telefono: string;
+export interface CandidaturaWithEmpresaDTO{
+    id: string;
+    cargo: string;
+    fecha: string;
+    estado: EstadoCandidatura;
+    notas: string;
+    empresa: Empresa;
+    reclutadoresIds?: string[];
+    userInfo?: UserResumenDTO;
 }
 
-export interface ReclutadorDTO {
-    nombre: string;
-    linkedinUrl: string;
-    empresaId: string;
-    telefono?: string;
-}
 
 export interface PreguntaDTO {
     pregunta: string;

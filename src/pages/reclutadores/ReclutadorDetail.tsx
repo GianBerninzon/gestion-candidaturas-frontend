@@ -1,4 +1,6 @@
-import { Reclutador } from "@/types";
+import reclutadoresService from "@/services/reclutadoresService";
+import useAuthStore from "@/store/authStore";
+import { CandidaturaWithEmpresaDTO, ReclutadorWithEmpresaDTO } from "@/types";
 import {
     ArrowBack as ArrowBackIcon,
     Edit as EditIcon,
@@ -7,96 +9,31 @@ import {
     LinkedIn as LinkedInIcon,
     Phone as PhoneIcon,
     Email as EmailIcon,
-    Visibility as VisibilityIcon
+    Delete as DeleteIcon,
+    Error as ErrorIcon,
+    BorderClear
 } from "@mui/icons-material";
 import {
     Box,
     Button,
     Card,
     CardContent,
+    Chip,
+    CircularProgress,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
     Divider,
     IconButton,
+    Pagination,
     Paper,
-    Skeleton,
     Tooltip,
     Typography
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
-// Datos simulados para desarrollo (en producción vendrían de la API)
-const mockReclutadores: Reclutador[] = [
-    {
-        id: '1',
-        nombre: 'Ana Martínez',
-        empresa: {
-            id: '1',
-            nombre: 'Empresa ABC',
-            correo: 'contacto@empresaabc.com',
-            telefono: '123456789',
-            fechaCreacion: '2023-01-15',
-            fechaActualizacion: '2023-05-20'
-        },
-        linkedinUrl: 'https://linkedin.com/in/anamartinez',
-        telefono: '611222333'
-    },
-    {
-        id: '2',
-        nombre: 'Carlos López',
-        empresa: {
-            id: '2',
-            nombre: 'Corporación XYZ',
-            correo: 'info@corporacionxyz.com',
-            telefono: '987654321',
-            fechaCreacion: '2023-02-10',
-            fechaActualizacion: '2023-06-15'
-        },
-        linkedinUrl: 'https://linkedin.com/in/carloslopez',
-        telefono: '622333444'
-    },
-    {
-        id: '3',
-        nombre: 'Elena Rodríguez',
-        empresa: {
-            id: '1',
-            nombre: 'Empresa ABC',
-            correo: 'contacto@empresaabc.com',
-            telefono: '123456789',
-            fechaCreacion: '2023-01-15',
-            fechaActualizacion: '2023-05-20'
-        },
-        linkedinUrl: 'https://linkedin.com/in/elenarodriguez',
-        telefono: '633444555'
-    },
-    {
-        id: '4',
-        nombre: 'Javier Sánchez',
-        empresa: {
-            id: '3',
-            nombre: 'Tech Solutions',
-            correo: 'soporte@techsolutions.com',
-            telefono: '555555555',
-            fechaCreacion: '2023-03-05',
-            fechaActualizacion: '2023-07-10'
-        },
-        linkedinUrl: 'https://linkedin.com/in/javiersanchez',
-        telefono: '644555666'
-    },
-    {
-        id: '5',
-        nombre: 'María González',
-        empresa: {
-            id: '4',
-            nombre: 'Startup Inc',
-            correo: 'hello@startupinc.com',
-            telefono: '666666666',
-            fechaCreacion: '2023-04-20',
-            fechaActualizacion: '2023-08-05'
-        },
-        linkedinUrl: 'https://linkedin.com/in/mariagonzalez',
-        telefono: '655666777'
-    }
-];
 
 /**
  * Componente que muestra los detalles de un reclutador específico
@@ -105,58 +42,159 @@ const mockReclutadores: Reclutador[] = [
 const ReclutadorDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const {user} = useAuthStore();
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'ROOT';
     
-    const [reclutador, setReclutador] = useState<Reclutador | null>(null);
+    const [reclutador, setReclutador] = useState<ReclutadorWithEmpresaDTO | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    const [candidaturas, setCandidaturas] = useState<CandidaturaWithEmpresaDTO[]>([]);
+    const [candidaturasPage, setCandidaturasPage] = useState(0);
+    const [candidaturasSize, setCandidaturasSize] = useState(6);
+    const [candidaturasTotal, setCandidaturasTotal] = useState(0);
+    const [candidaturasTotalPage, setCandidaturasTotalPage] = useState(0);
+    const [loadingCandidaturas, setLoadingCandidaturas] = useState(false);
+    const [errorCandidaturas, setErrorCandidaturas] = useState<string | null>(null);
     
     useEffect(() => {
-        // Simulación de carga de datos (reemplazar por llamada a API)
-        setTimeout(() => {
-            if (!id) {
-                setError('ID de reclutador no proporcionado');
-                setLoading(false);
-                return;
-            }
+      const fecthReclutador = async () => {
+        if(!id){
+            setError('ID de reclutador no proporcionado');
+            setLoading(false);
+            return;
+        }
+
+        try {
+            setLoading(true);
+            const data = await reclutadoresService.getReclutadorById(id);
+            console.log('Datos del reclutador:',data);
+            setReclutador(data);
+        } catch (err: any) {
+            console.error('Error al cargar el reclutador:', err);
             
-            const foundReclutador = mockReclutadores.find(rec => rec.id === id);
-            
-            if (foundReclutador) {
-                setReclutador(foundReclutador);
-                setLoading(false);
-            } else {
-                setError('Reclutador no encontrado');
-                setLoading(false);
+            let errorMessage = 'No se pudo cargar la informacion del reclutador.';
+
+            if(err.response){
+                if(err.response.status === 404){
+                    errorMessage = 'Reclutador no encontrado.';
+                }else if(err.response.status === 403){
+                    errorMessage = 'No tienes permiso para ver este reclutador.';
+                }else if(err.response.data?.message){
+                    errorMessage = err.response.data.message;
+                }
+            }else if(err.request){
+                errorMessage = 'No se pudo conectar con el servidor. Verifica tu conexión.';
             }
-        }, 1000);
+
+            setError(errorMessage);
+        }finally{
+            setLoading(false);
+        }
+      };
+      fecthReclutador();
     }, [id]);
+
+    useEffect(() => {
+        const fetchCandidaturas = async() => {
+            if(!id || !reclutador) return;
+
+            setLoadingCandidaturas(true);
+            setErrorCandidaturas(null);
+
+            try {
+                const response = await reclutadoresService.getCandidaturasByReclutador(id, candidaturasPage, candidaturasSize);
+                setCandidaturas(response.content);
+                setCandidaturasTotal(response.totalElements);
+                setCandidaturasTotalPage(response.totalPages);
+            } catch (err: any) {
+                console.error('Error al cargar las candidaturas:', error);
+                let errorMessage = 'No se pudo cargar la informacion de las candidaturas.';
+
+                if(err.response){
+                    if(err.response.status === 403){
+                        errorMessage = 'No tienes permiso para ver las candidaturas.';
+                    }else if(err.response.data?.message){
+                        errorMessage = err.response.data.message;
+                    }
+                }else if(err.request){
+                    errorMessage = 'No se pudo conectar con el servidor. Verifica tu conexión.';
+                }
+
+                setErrorCandidaturas(errorMessage);
+            } finally {
+                setLoadingCandidaturas(false);
+            }
+        };
+        fetchCandidaturas();
+    }, [id, reclutador, candidaturasPage, candidaturasSize]);
+
+    //Funciona para cambiar de pagina
+    const handleCandidaturasPageChange = (event:unknown, newPage: number) => {
+        setCandidaturasPage(newPage);
+    };
     
     // Navegar de vuelta a la lista de reclutadores
     const handleBack = () => {
         navigate('/reclutadores');
     };
     
-    // Navegar a la página de lista con indicación de abrir el diálogo de edición
+    // Navegar a la pagina de edicion
     const handleEdit = () => {
-        // Pasamos el ID del reclutador a editar a través del estado de navegación
-        // Esto permitirá que ReclutadoresList abra automáticamente el diálogo de edición
-        navigate('/reclutadores', { state: { editReclutadorId: id } });
+        if(id){
+            navigate(`/reclutadores/${id}/edit`);
+        }
     };
-    
+
     // Navegar a la página de detalle de la empresa asociada
     const handleViewEmpresa = () => {
-        if (reclutador) {
+        if (reclutador?.empresa?.id) {
             navigate(`/empresas/${reclutador.empresa.id}`);
         }
+    };
+
+    // Manejar el borrado del reclutador
+    const handleDeleteClick = () => {
+        setDeleteDialogOpen(true);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if(!id) return;
+
+        setDeleting(true);
+        try {
+            await reclutadoresService.deleteReclutador(id);
+            setDeleteDialogOpen(false);
+            navigate('/reclutadores', { state: { message: 'Reclutador eliminado exitosamente' }});
+        } catch (err: any) {
+            console.error('Error al eliminar el reclutador:', err);
+            let errorMessage = 'Error al eliminar el reclutador.';
+
+            if(err.response){
+                if(err.response.status === 403){
+                    errorMessage = 'No tienes permisos para eliminar este reclutador.';
+                }else if(err.response.data?.message){
+                    errorMessage = err.response.data.message;
+                }
+            }
+
+            setError(errorMessage);
+            setDeleteDialogOpen(false);
+        }finally{
+            setDeleting(false);
+        }
+    };
+
+    const handleDeteleCancel = () => {
+        setDeleteDialogOpen(false);
     };
     
     if (loading) {
         return (
-            <Box sx={{ p: 3 }}>
-                <Skeleton variant="rectangular" width="100%" height={200} />
-                <Skeleton variant="text" sx={{ mt: 2 }} />
-                <Skeleton variant="text" />
-                <Skeleton variant="text" width="60%" />
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
+                <CircularProgress />
             </Box>
         );
     }
@@ -165,7 +203,10 @@ const ReclutadorDetail = () => {
         return (
             <Box sx={{ p: 3 }}>
                 <Paper sx={{ p: 3, bgcolor: 'error.light', color: 'error.contrastText' }}>
-                    <Typography variant="h6">{error}</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <ErrorIcon sx={{ mr: 1 }} />
+                        <Typography variant="h6">{error}</Typography>
+                    </Box>
                     <Button 
                         variant="contained" 
                         color="primary" 
@@ -186,7 +227,7 @@ const ReclutadorDetail = () => {
     return (
         <Box sx={{ p: 3, width: '100%', maxWidth: '1200px', mx: 'auto' }}>
             {/* Cabecera con acciones */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2 }}>
                 <Button
                     variant="outlined"
                     color="primary"
@@ -195,18 +236,30 @@ const ReclutadorDetail = () => {
                 >
                     Volver a la lista
                 </Button>
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<EditIcon />}
-                    onClick={handleEdit}
-                >
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                    {isAdmin && (
+                        <Button
+                            variant="outlined"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            onClick={handleDeleteClick}
+                        >
+                            Eliminar
+                        </Button>
+                    )}
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={<EditIcon />}
+                        onClick={handleEdit}
+                    >
                     Editar Reclutador
                 </Button>
+                </Box>
             </Box>
-            
+
             {/* Tarjeta principal con información del reclutador */}
-            <Card elevation={3} sx={{ bgcolor: '#121212', color: 'white'  }}>
+            <Card elevation={3}>
                 <CardContent>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, justifyContent: 'center' }}>
                         <PersonIcon fontSize="large" sx={{ mr: 2, color: 'primary.main' }} />
@@ -238,25 +291,16 @@ const ReclutadorDetail = () => {
                                     mx: 'auto',
                                     bgcolor: 'background.paper'
                                 }}
-                            >
-                                {reclutador.telefono && (
+                            >                                
+                                {reclutador.linkinUrl && (
                                     <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
-                                        <PhoneIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                                        <Typography variant="body1">
-                                            {reclutador.telefono}
-                                        </Typography>
-                                    </Box>
-                                )}
-                                
-                                {reclutador.linkedinUrl && (
-                                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
-                                        <LinkedInIcon sx={{ mr: 2, color: 'text.secondary' }} />
+                                        <LinkedInIcon sx={{ mr: 2, color: '#0077b5' }} />
                                         <Typography variant="body1">
                                             <a 
-                                                href={reclutador.linkedinUrl} 
+                                                href={reclutador.linkinUrl.startsWith('https') ? reclutador.linkinUrl : `https://${reclutador.linkinUrl}`} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
-                                                style={{ color: 'inherit', textDecoration: 'underline' }}
+                                                style={{ color: '#0077b5', textDecoration: 'underline' }}
                                             >
                                                 Perfil de LinkedIn
                                             </a>
@@ -287,37 +331,49 @@ const ReclutadorDetail = () => {
                                     bgcolor: 'background.paper'
                                 }}
                             >
-                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
-                                        <BusinessIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                                        <Typography variant="body1" fontWeight="bold">
-                                            {reclutador.empresa.nombre}
-                                        </Typography>
-                                    </Box>
-                                    <Tooltip title="Ver detalles de la empresa">
-                                        <IconButton 
-                                            color="primary" 
-                                            onClick={handleViewEmpresa}
-                                            size="small"
-                                        >
-                                            <VisibilityIcon fontSize="small" />
-                                        </IconButton>
-                                    </Tooltip>
-                                </Box>
-                                
-                                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
-                                    <EmailIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                                    <Typography variant="body2">
-                                        {reclutador.empresa.correo}
+                                {reclutador.empresa ? (
+                                    <>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
+                                                <BusinessIcon sx={{ mr: 2, color: 'secondary.main' }} />
+                                                <Typography variant="body1" fontWeight="bold">
+                                                    {reclutador.empresa.nombre}
+                                                </Typography>
+                                            </Box>
+                                            <Tooltip title="Ver detalles de la empresa">
+                                                <IconButton 
+                                                    color="primary" 
+                                                    onClick={handleViewEmpresa}
+                                                    size="small"
+                                                >
+                                                    <ArrowBackIcon fontSize="small" sx={{ transform: 'rotate(180deg)' }} />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
+
+                                        {reclutador.empresa.correo && (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
+                                                <EmailIcon sx={{ mr: 2, color: 'text.secondary' }} />
+                                                <Typography variant="body2">
+                                                    {reclutador.empresa.correo}
+                                                </Typography>
+                                            </Box>
+                                        )}
+
+                                        {reclutador.empresa.telefono && (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
+                                            <PhoneIcon sx={{ mr: 2, color: 'text.secondary' }} />
+                                            <Typography variant="body2">
+                                                {reclutador.empresa.telefono}
+                                            </Typography>
+                                        </Box>
+                                        )}
+                                    </>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary" align="center">
+                                        No hay informacion de empresa disponible
                                     </Typography>
-                                </Box>
-                                
-                                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pl: 2 }}>
-                                    <PhoneIcon sx={{ mr: 2, color: 'text.secondary' }} />
-                                    <Typography variant="body2">
-                                        {reclutador.empresa.telefono}
-                                    </Typography>
-                                </Box>
+                                )}
                             </Box>
                         </Box>
                     </Box>
@@ -327,11 +383,110 @@ const ReclutadorDetail = () => {
                     <Typography variant="h6" gutterBottom sx={{ textAlign: 'center', color: 'text.secondary' }}>
                         Candidaturas relacionadas
                     </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mb: 3 }}>
-                        No hay candidaturas asociadas a este reclutador.
-                    </Typography>
+
+                    {loadingCandidaturas && candidaturasPage === 0 ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+                            <CircularProgress />
+                        </Box>
+                    ): errorCandidaturas ? (
+                        <Typography variant="body2" color="error" sx={{ textAlign: 'center', mb: 3}}>
+                            {errorCandidaturas}
+                        </Typography>
+                    ) : candidaturas.length > 0 ? (
+                        <Box sx={{ px:3, pb: 3}}>
+                            <Box sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr'},
+                                    gap: 2  
+                            }}>
+                                {candidaturas.map(candidatura => (
+                                    <Card key={candidatura.id} sx={{ height: '100%'}}>
+                                        <CardContent>
+                                            <Typography variant="h6" gutterBottom>
+                                                {candidatura.cargo}
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb:1}}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    {new Date(candidatura.fecha).toLocaleDateString()}
+                                                </Typography>
+                                                <Chip 
+                                                    label={candidatura.estado}
+                                                    size="small"
+                                                    color={
+                                                        candidatura.estado === 'ACEPTADA' ? 'success' :
+                                                        candidatura.estado === 'RECHAZADA' ? 'error' :
+                                                        candidatura.estado === 'ENTREVISTA' ? 'primary' :
+                                                        candidatura.estado === 'PENDIENTE' ? 'warning' :
+                                                        'default'
+                                                    }
+                                                />
+                                            </Box>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', mt: 2}}>
+                                                <BusinessIcon fontSize="small" sx={{ mr:1, color: 'text.secondary'}} />
+                                                <Typography variant="body2">
+                                                    {candidatura.empresa.nombre}
+                                                </Typography>
+                                            </Box>
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                sx={{ mt: 2 }}
+                                                onClick={() => navigate(`/candidaturas/${candidatura.id}`)}
+                                            >
+                                                Ver detalles
+                                            </Button>
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </Box>
+
+                            {/* Paginacion */}
+                            {candidaturasTotalPage > 1 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3}}>
+                                <Pagination
+                                    count={candidaturasTotalPage}
+                                    page={candidaturasPage + 1}
+                                    onChange={(e, page) => handleCandidaturasPageChange(e, page -1)}
+                                    color="primary"
+                                />
+                            </Box>
+                            )}
+                        </Box>
+                    ): (
+                        <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mb: 3}}>
+                            No hay candidaturas relacionadas con este reclutador.
+                        </Typography>
+                    )}
                 </CardContent>
             </Card>
+
+            {/* Dialogo de confirmacion para eliminar */}
+            <Dialog
+                open={deleteDialogOpen}
+                onClose={handleDeteleCancel}
+                aria-labelledby="alert-dialog-title"
+                aria-describedby="alert-dialog-desciption"
+            >
+                <DialogTitle id="alert-dialog-title">
+                    {"¿Eliminar este reclutador?"}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText id="alert-dialog-desciption">
+                        Esta Accion no se puede deshacer. Al eliminar este reclutador, se perderá toda su información y asociaciones con candidaturas.
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        onClick={handleDeleteConfirm}
+                        color="error"
+                        variant="contained"
+                        disabled={deleting}
+                        autoFocus
+                    >
+                        {deleting ? <CircularProgress size={24} /> : 'Eliminar'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

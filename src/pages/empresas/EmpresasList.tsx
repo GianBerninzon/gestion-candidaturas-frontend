@@ -5,7 +5,6 @@ import {
     Paper,
     TextField,
     Typography,
-    LinearProgress,
     Table,
     TableBody,
     IconButton,
@@ -14,402 +13,326 @@ import {
     TableHead,
     TableRow,
     TableCell,
-    Tooltip,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    FormControl,
-    InputLabel,
-    OutlinedInput,
-    FormHelperText
+    Alert,
+    CircularProgress,
+    Snackbar
 } from "@mui/material";
 import { 
     Add as AddIcon,
     Search as SearchIcon,
     Visibility as VisibilityIcon,
     Edit as EditIcon,
-    Delete as DeleteIcon,
-    Email as EmailIcon,
-    Phone as PhoneIcon
+    Business as BusinessIcon
 } from "@mui/icons-material";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useForm, Controller } from "react-hook-form";
-
-// Datos simulados para desarrollo (en producción vendrían de la API)
-const mockData: Empresa[] = [
-    {
-        id: '1',
-        nombre: 'Empresa ABC',
-        correo: 'contacto@empresaabc.com',
-        telefono: '123456789',
-        fechaCreacion: '2023-01-15',
-        fechaActualizacion: '2023-05-20'
-    },
-    {
-        id: '2',
-        nombre: 'Corporación XYZ',
-        correo: 'info@corporacionxyz.com',
-        telefono: '987654321',
-        fechaCreacion: '2023-02-10',
-        fechaActualizacion: '2023-06-15'
-    },
-    {
-        id: '3',
-        nombre: 'Tech Solutions',
-        correo: 'soporte@techsolutions.com',
-        telefono: '555555555',
-        fechaCreacion: '2023-03-05',
-        fechaActualizacion: '2023-07-10'
-    },
-    {
-        id: '4',
-        nombre: 'Startup Inc',
-        correo: 'hello@startupinc.com',
-        telefono: '666666666',
-        fechaCreacion: '2023-04-20',
-        fechaActualizacion: '2023-08-05'
-    },
-    {
-        id: '5',
-        nombre: 'Global Enterprises',
-        correo: 'info@globalenterprises.com',
-        telefono: '111222333',
-        fechaCreacion: '2023-05-15',
-        fechaActualizacion: '2023-09-01'
-    }
-];
-
-// Interfaz para el formulario de empresa
-interface EmpresaFormData {
-    nombre: string;
-    correo: string;
-    telefono: string;
-}
+import empresasService from "@/services/empresasService";
 
 /**
  * Componente que muestra la lista de empresas y permite su gestión
  * Implementa funcionalidades de búsqueda, paginación y CRUD de empresas
  */
-const EmpresasList = () => {
+const EmpresasList: React.FC = () => {
+    console.log('EmpresasList - Inicio del renderizado');
     // Estados para gestionar la lista de empresas
     const [empresas, setEmpresas] = useState<Empresa[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
-    const [filtroTexto, setFiltroTexto] = useState('');
-    
-    // Estados para el diálogo de creación/edición
-    const [openDialog, setOpenDialog] = useState(false);
-    const [editingEmpresa, setEditingEmpresa] = useState<Empresa | null>(null);
+    const [filtroNombre, setFiltroNombre] = useState('');
+    const [totalElements, setTotalElements] = useState(0);
+    const [retrying, setRetrying] = useState(false);
     
     const navigate = useNavigate();
+    const isDev = import.meta.env.DEV;
 
-    // Configuración del formulario con react-hook-form
-    const { control, handleSubmit, reset, formState: { errors } } = useForm<EmpresaFormData>();
+    // Cargar empresas con paginacion y filtros
+    const fetchEmpresas = async () => {
+        console.log('EmpresasList - Cargar empresas');
+        setLoading(true);
+        setError(null);
 
-    // Cargar datos al montar el componente
-    useEffect(() => {
-        // Simulación de carga de datos (reemplazar por llamada a API)
-        setTimeout(() => {
-            setEmpresas(mockData);
+        try {
+            let response;
+
+            // Si hay un filtro de nombre, usamos el endpoint de busqueda
+            if(filtroNombre){
+                response = await empresasService.buscarPorNombre(
+                    filtroNombre,
+                    page,
+                    rowsPerPage
+                );
+            } else{
+                // De lo contrario, obtenemos todas las empresas
+                response = await empresasService.getEmpresas(
+                    page,
+                    rowsPerPage
+                );
+            }
+
+            if(response && response.content){
+                console.log(`Empresas cargadas: ${response.content.length} de ${response.totalElements}`);
+                setEmpresas(response.content);
+                setTotalElements(response.totalElements);
+            }else{
+                console.warn('Respuesta vacia o sin contenido');
+                setEmpresas([]);
+                setTotalElements(0);
+            }
+        } catch (err: any) {
+            console.error('Error al cargar empresas:', err);
+
+            // Mensaje de error informativo
+            let errorMessage = 'Error al cargar empresas';
+
+            if(err.response){
+                if(err.response.status === 500){
+                    errorMessage += 'Error interno del servidor (500). Contacta con el administrador.';
+                }else if(err.response.status === 403){
+                    errorMessage += 'No tienes permisos para ver estas empresas (403).';
+                }else if(err.response.data?.message){
+                    errorMessage += err.response.data.message;
+                }else {
+                    errorMessage += `Error ${err.response.status}: ${err.response.statusText}`;
+                }
+            }else if(err.request){
+                errorMessage += 'No se pudo conectar con el servidor. Verifica tu conexion.';
+            }else {
+                errorMessage += 'Error inesperado al procesar la solicitud.';
+            }
+
+            setError(errorMessage);
+            setEmpresas([]);
+            setTotalElements(0);
+        }finally{
             setLoading(false);
-        }, 1000);
-    }, []);
+            setRetrying(false);
+        }
+    };
 
-    // Gestión de paginación
+    // Cargar empresas al montar el componente o cambiar filtros/paginacion
+    useEffect(() => {
+        console.log('EmpresasList - useEffect');
+        fetchEmpresas();
+    }, [page, rowsPerPage, filtroNombre]);
+
+    // Manejadores de eventos
     const handleChangePage = (_event: unknown, newPage: number) => {
         setPage(newPage);
     };
 
-    const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setRowsPerPage(parseInt(event.target.value, 10));
+    const handleChangeRowsPerPage = (evt: React.ChangeEvent<HTMLInputElement>) => {
+        if(evt?.target?.value){
+            setRowsPerPage(parseInt(evt.target.value, 10));
+            setPage(0);
+        }
+    };
+
+    const handleCreateEmpresa = () => {
+        navigate('/empresas/new');
+    };
+
+    const handleViewEmpresa = (id: string) => {
+        navigate(`/empresas/${id}`);
+    };
+
+    const handleEditEmpresa = (id: string) => {
+        navigate(`/empresas/${id}/edit`);
+    };
+
+    const handleRetry = () => {
+        setRetrying(true);
+        fetchEmpresas();
+    };
+
+    // Limpiar filtros
+    const handleClearFilters = () => {
+        setFiltroNombre('');
         setPage(0);
     };
 
-    // Filtrar empresas según texto de búsqueda
-    const empresasFiltradas = empresas.filter(empresa => 
-        empresa.nombre.toLowerCase().includes(filtroTexto.toLowerCase()) ||
-        empresa.correo.toLowerCase().includes(filtroTexto.toLowerCase()) ||
-        empresa.telefono.includes(filtroTexto)
-    );
-
-    // Aplicar paginación a los resultados filtrados
-    const empresasPaginadas = empresasFiltradas.slice(
-        page * rowsPerPage,
-        page * rowsPerPage + rowsPerPage
-    );
-
-    // Gestión del diálogo de creación/edición
-    const handleOpenDialog = (empresa?: Empresa) => {
-        if (empresa) {
-            setEditingEmpresa(empresa);
-            reset({
-                nombre: empresa.nombre,
-                correo: empresa.correo,
-                telefono: empresa.telefono
-            });
-        } else {
-            setEditingEmpresa(null);
-            reset({
-                nombre: '',
-                correo: '',
-                telefono: ''
-            });
-        }
-        setOpenDialog(true);
-    };
-
-    const handleCloseDialog = () => {
-        setOpenDialog(false);
-        setEditingEmpresa(null);
-    };
-
-    // Guardar empresa (crear nueva o actualizar existente)
-    const onSubmit = (data: EmpresaFormData) => {
-        if (editingEmpresa) {
-            // Actualizar empresa existente
-            const updatedEmpresas = empresas.map(emp => 
-                emp.id === editingEmpresa.id 
-                    ? { ...emp, ...data, fechaActualizacion: new Date().toISOString().split('T')[0] }
-                    : emp
-            );
-            setEmpresas(updatedEmpresas);
-        } else {
-            // Crear nueva empresa
-            const newEmpresa: Empresa = {
-                id: `${Date.now()}`, // Generar ID temporal (en producción lo generaría el backend)
-                ...data,
-                fechaCreacion: new Date().toISOString().split('T')[0],
-                fechaActualizacion: new Date().toISOString().split('T')[0]
-            };
-            setEmpresas([...empresas, newEmpresa]);
-        }
-        handleCloseDialog();
-    };
-
-    // Eliminar empresa
-    const handleDeleteEmpresa = (id: string) => {
-        // En producción, confirmar antes de eliminar y llamar a la API
-        const updatedEmpresas = empresas.filter(emp => emp.id !== id);
-        setEmpresas(updatedEmpresas);
-    };
-
     return (
-        <Box sx={{ p: 3 }}>
-            <Typography variant="h4" gutterBottom>
-                Gestión de Empresas
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-                Administra la información de las empresas para tus candidaturas
-            </Typography>
+        <Box sx={{ width: '100%' }}>
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                width: '100%',
+                maxWidth: '1000px',
+                mx: 'auto'
+            }}>
+                {/* Encabezado y boton de nueva empresa */}
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    mb: 3,
+                    width: '100%'
+                }}>
+                    <Typography variant="h4" component="h1" gutterBottom>
+                        Empresas
+                    </Typography>
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={<AddIcon />}
+                        onClick={handleCreateEmpresa}
+                    >
+                        Nueva Empresa
+                    </Button>
+                </Box>
 
-            {/* Barra de acciones */}
-            <Box sx={{ display: 'flex', mb: 3, gap: 2 }}>
-                <TextField
-                    label="Buscar empresas"
-                    variant="outlined"
-                    size="small"
-                    fullWidth
-                    value={filtroTexto}
-                    onChange={(e) => setFiltroTexto(e.target.value)}
-                    InputProps={{
-                        startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />
-                    }}
-                />
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpenDialog()}
-                >
-                    Nueva Empresa
-                </Button>
+                {/* Filtros */}
+                <Paper sx={{
+                    p:2,
+                    mb:3,
+                    width: '100%'
+                }}>
+                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                        <TextField
+                        label="Buscar por nombre"
+                        variant="outlined"
+                        size="small"
+                        value={filtroNombre}
+                        onChange={(e) => setFiltroNombre(e.target.value)}
+                        sx={{ flexGrow: 1, minWidth: '200px'}}
+                        InputProps={{
+                            startAdornment: <SearchIcon sx={{ mr:1, color: 'text.secondary' }} />,
+                        }}
+                    />
+
+                    {/* Boton para limpiar filtros */}
+                    {filtroNombre && (
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={handleClearFilters}
+                        >
+                            Limpiar Filtros
+                        </Button>
+                    )}
+                    </Box>
+                </Paper>
+
+                {/* Mensaje de erro */}
+                {error && (
+                    <Alert
+                        severity="error"
+                        sx={{ mb:3, width: '100%' }}
+                        action={
+                            <Button
+                                color="inherit"
+                                size="small"
+                                onClick={handleRetry}
+                                disabled={retrying}
+                            >
+                                {retrying ? 'Reintentando...' : 'Reintentar'}
+                            </Button>
+                        }
+                    >
+                        {error}
+                    </Alert>
+                )}
+
+                {/* Tabla de empresas */}
+                <Paper sx={{ width: '100%', overflow: 'hidden', mb:3 }}>
+                    {loading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py:4 }}>
+                            <CircularProgress />
+                        </Box>
+                    ): (
+                        <>
+                            <TableContainer sx={{ maxHeight: 440 }}>
+                                <Table stickyHeader>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell align="center">Nombre</TableCell>
+                                            <TableCell align="center">Correo</TableCell>
+                                            <TableCell align="center">Telefono</TableCell>
+                                            <TableCell align="center">Acciones</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {empresas.length > 0 ? (
+                                            empresas.map((empresa) => (
+                                                <TableRow hover key={empresa.id}>
+                                                    <TableCell align="center">
+                                                        <Box sx={{ 
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center'
+                                                         }}>
+                                                            <BusinessIcon
+                                                                fontSize="small"
+                                                                sx={{ mr:1, color: 'primary.main', opacity: 0.7 }}
+                                                            />
+                                                            {empresa.nombre}
+                                                        </Box>
+                                                    </TableCell>
+                                                    <TableCell align="center">{empresa.correo || 'N/A'}</TableCell>
+                                                    <TableCell align="center">{empresa.telefono || 'N/A'}</TableCell>
+                                                    <TableCell align="center">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleViewEmpresa(empresa.id)}
+                                                            title="Ver detalles"
+                                                        >
+                                                            <VisibilityIcon fontSize="small"/>
+                                                        </IconButton>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleEditEmpresa(empresa.id)}
+                                                            title="Editar"
+                                                        >
+                                                            <EditIcon fontSize="small"/>
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        ) : (
+                                            <TableRow>
+                                                <TableCell colSpan={4} align="center">
+                                                    No se encontraron empresas
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <TablePagination
+                                component="div"
+                                count={totalElements}
+                                page={page}
+                                onPageChange={handleChangePage}
+                                rowsPerPage={rowsPerPage}
+                                onRowsPerPageChange={handleChangeRowsPerPage}
+                                labelRowsPerPage="Filas por página"
+                                labelDisplayedRows={({ from, to, count }) =>
+                                    `${from}-${to} de ${count !== -1 ? count : `mas de ${to}`}`
+                                }
+                                rowsPerPageOptions={[5, 10, 25]}
+                            />
+                        </>
+                    )}
+                </Paper>
             </Box>
 
-            {/* Tabla de empresas */}
-            <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-                {loading ? (
-                    <LinearProgress />
-                ) : (
-                    <>
-                        <TableContainer sx={{ maxHeight: 440 }}>
-                            <Table stickyHeader>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Nombre</TableCell>
-                                        <TableCell>Correo</TableCell>
-                                        <TableCell>Teléfono</TableCell>
-                                        <TableCell>Fecha Creación</TableCell>
-                                        <TableCell align="right">Acciones</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {empresasPaginadas.map((empresa) => (
-                                        <TableRow key={empresa.id} hover>
-                                            <TableCell>{empresa.nombre}</TableCell>
-                                            <TableCell>
-                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                    <EmailIcon fontSize="small" sx={{ mr: 1, color: 'action.active' }} />
-                                                    {empresa.correo}
-                                                </Box>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                    <PhoneIcon fontSize="small" sx={{ mr: 1, color: 'action.active' }} />
-                                                    {empresa.telefono}
-                                                </Box>
-                                            </TableCell>
-                                            <TableCell>
-                                                {new Date(empresa.fechaCreacion).toLocaleDateString()}
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                <Tooltip title="Ver detalles">
-                                                    <IconButton
-                                                        size="small"
-                                                        color="info"
-                                                        onClick={() => navigate(`/empresas/${empresa.id}`)}  // Navegar a la página de detalles
-                                                    >
-                                                        <VisibilityIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Editar">
-                                                    <IconButton
-                                                        size="small"
-                                                        color="primary"
-                                                        onClick={() => handleOpenDialog(empresa)}
-                                                    >
-                                                        <EditIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Eliminar">
-                                                    <IconButton
-                                                        size="small"
-                                                        color="error"
-                                                        onClick={() => handleDeleteEmpresa(empresa.id)}
-                                                    >
-                                                        <DeleteIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                    {empresasPaginadas.length === 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={5} align="center">
-                                                No se encontraron empresas
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                        <TablePagination
-                            component="div"
-                            count={empresasFiltradas.length}
-                            page={page}
-                            onPageChange={handleChangePage}
-                            rowsPerPage={rowsPerPage}
-                            onRowsPerPageChange={handleChangeRowsPerPage}
-                            labelRowsPerPage="Filas por página:"
-                            labelDisplayedRows={({ from, to, count }) =>
-                                `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`
-                            }
-                            rowsPerPageOptions={[5, 10, 25]}
-                        />
-                    </>
-                )}
-            </Paper>
-
-            {/* Diálogo para crear/editar empresa */}
-            <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    {editingEmpresa ? 'Editar Empresa' : 'Nueva Empresa'}
-                </DialogTitle>
-                <form onSubmit={handleSubmit(onSubmit)}>
-                    <DialogContent>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <Controller
-                                name="nombre"
-                                control={control}
-                                rules={{ required: 'El nombre es obligatorio' }}
-                                render={({ field }) => (
-                                    <FormControl fullWidth error={!!errors.nombre}>
-                                        <InputLabel htmlFor="nombre">Nombre de la empresa</InputLabel>
-                                        <OutlinedInput
-                                            id="nombre"
-                                            label="Nombre de la empresa"
-                                            {...field}
-                                        />
-                                        {errors.nombre && (
-                                            <FormHelperText>{errors.nombre.message}</FormHelperText>
-                                        )}
-                                    </FormControl>
-                                )}
-                            />
-                            
-                            <Controller
-                                name="correo"
-                                control={control}
-                                rules={{ 
-                                    required: 'El correo es obligatorio',
-                                    pattern: {
-                                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                                        message: 'Correo electrónico inválido'
-                                    }
-                                }}
-                                render={({ field }) => (
-                                    <FormControl fullWidth error={!!errors.correo}>
-                                        <InputLabel htmlFor="correo">Correo electrónico</InputLabel>
-                                        <OutlinedInput
-                                            id="correo"
-                                            label="Correo electrónico"
-                                            {...field}
-                                        />
-                                        {errors.correo && (
-                                            <FormHelperText>{errors.correo.message}</FormHelperText>
-                                        )}
-                                    </FormControl>
-                                )}
-                            />
-                            
-                            <Controller
-                                name="telefono"
-                                control={control}
-                                rules={{ 
-                                    required: 'El teléfono es obligatorio',
-                                    pattern: {
-                                        value: /^[0-9]{9,}$/,
-                                        message: 'Debe contener al menos 9 dígitos'
-                                    }
-                                }}
-                                render={({ field }) => (
-                                    <FormControl fullWidth error={!!errors.telefono}>
-                                        <InputLabel htmlFor="telefono">Teléfono</InputLabel>
-                                        <OutlinedInput
-                                            id="telefono"
-                                            label="Teléfono"
-                                            {...field}
-                                        />
-                                        {errors.telefono && (
-                                            <FormHelperText>{errors.telefono.message}</FormHelperText>
-                                        )}
-                                    </FormControl>
-                                )}
-                            />
-                        </Box>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={handleCloseDialog} color="inherit">
-                            Cancelar
-                        </Button>
-                        <Button type="submit" variant="contained" color="primary">
-                            {editingEmpresa ? 'Actualizar' : 'Crear'}
-                        </Button>
-                    </DialogActions>
-                </form>
-            </Dialog>
+            {/* SnackBar para errores de red */}
+            <Snackbar
+                open={!!error && error.includes('No se pudo conectar')}
+                autoHideDuration={6000}
+                message='Error de conexion con el servidor'
+                action={
+                    <Button
+                        color="secondary"
+                        size="small"
+                        onClick={handleRetry}
+                    >
+                        Reintentar
+                    </Button>
+                }
+            />
         </Box>
     );
 };

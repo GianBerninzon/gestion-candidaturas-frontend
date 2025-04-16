@@ -1,3 +1,5 @@
+import React, { useState } from "react";
+import { Outlet, useNavigate } from "react-router-dom";
 import useAuthStore from "@/store/authStore";
 import { Person as PersonIcon,
      Business as BusinessIcon, 
@@ -6,20 +8,23 @@ import { Person as PersonIcon,
      Description as DescriptionIcon,
      ExitToApp as LogoutIcon
     } from "@mui/icons-material";
-import { AppBar, Box, Container, CssBaseline, Divider, Drawer, 
-    IconButton, List, ListItemButton, ListItemIcon, ListItemText, Theme, Toolbar, Typography 
+import { AppBar, Box, CssBaseline, Divider, Drawer, 
+    IconButton, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, 
+    useTheme
 } from "@mui/material";
-import { useMediaQuery } from "@mui/system";
-import { useState } from "react";
-import { Outlet, useNavigate } from "react-router-dom";
+import { alpha, useMediaQuery } from "@mui/system";
 
-const drawerWidth = 240;
 
-const MainLayout = () => {
+const drawerWidth = 220;
+
+const MainLayout: React.FC = () => {
     const [mobileOpen, setMobileOpen] = useState(false);
     const navigate = useNavigate();
     const { logout, user } = useAuthStore();
-    const isMobile = useMediaQuery((theme: Theme) => theme.breakpoints.down("md"));
+
+    // Usar el tema correctamente
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     const handleDrawerToggle = () => {
         setMobileOpen(!mobileOpen);
@@ -47,19 +52,43 @@ const MainLayout = () => {
             <Divider />
             <List>
                 {menuItems.map((item) => (
-                    <ListItemButton key={item.text} onClick={() => {
-                        navigate(item.path);
-                        if (isMobile) setMobileOpen(false);
-                    }}>
-                        <ListItemIcon>{item.icon}</ListItemIcon>
+                    <ListItemButton 
+                        key={item.text}
+                        onClick={() => {
+                            navigate(item.path);
+                            if (isMobile) setMobileOpen(false);
+                        }}
+                        sx={{
+                            py:1,
+                            '&.Mui-selected':{
+                                bgcolor: alpha(theme.palette.primary.main, 0.05),
+                                borderLeft: `4px solid ${theme.palette.primary.main}`,
+                            },
+                            '&:hover':{
+                                bgcolor: alpha(theme.palette.primary.main, 0.05),
+                            },
+                            borderLeft: `4px solid transparent`,
+                            // Destacar el item seleccionado basado en la ruta actual
+                            ...(window.location.pathname === item.path ||
+                                (item.path !== '/' && window.location.pathname.startsWith(item.path)) ? {
+                                    bgcolor: alpha(theme.palette.primary.main, 0.1),
+                                    borderLeft: `4px solid ${theme.palette.primary.main}`,
+                                } : {}
+                            )
+                        }}
+                    >
+                        <ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon>
                         <ListItemText primary={item.text} />
                     </ListItemButton>
                 ))}
             </List>
             <Divider />
             <List>
-                <ListItemButton onClick={handleLogout}>
-                    <ListItemIcon><LogoutIcon /></ListItemIcon>
+                <ListItemButton 
+                    onClick={handleLogout}
+                    sx={{ py: 1 }}
+                >
+                    <ListItemIcon sx={{ minWidth: 40 }}><LogoutIcon /></ListItemIcon>
                     <ListItemText primary="Cerrar Sesión" />
                 </ListItemButton>
             </List>
@@ -74,7 +103,7 @@ const MainLayout = () => {
                 sx={{
                     width: { sm: `calc(100% - ${drawerWidth}px)` },
                     ml: { sm: `${drawerWidth}px` },
-                    bgcolor: 'primary.main',
+                    zIndex: (theme) => theme.zIndex.drawer + 1,
                 }}
             >
                 <Toolbar>
@@ -96,6 +125,7 @@ const MainLayout = () => {
                 component="nav"
                 sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}
             >
+                {/* Drawer para moviles */}
                 <Drawer
                     variant="temporary"
                     open={mobileOpen}
@@ -105,16 +135,18 @@ const MainLayout = () => {
                     }}
                     sx={{
                         display: { xs: 'block', sm: 'none' },
-                        '& .MuiDrawer-praper': { boxSizing:'border-box', width: drawerWidth },
+                        '& .MuiDrawer-praper': { boxSizing:'border-box', width: drawerWidth, bgcolor: 'Background.paper' },
                     }}
                 >
                     {drawer}
                 </Drawer>
+
+                {/* Drawer para tablet/desktop */}
                 <Drawer
                     variant="permanent"
                     sx={{
                         display: { xs: 'none', sm: 'block' },
-                        '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth},
+                        '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth, borderRight: '1px solid', borderColor: 'divider'},
                     }}
                     open
                 >
@@ -125,16 +157,15 @@ const MainLayout = () => {
                 component="main"
                 sx={{
                     flexGrow: 1,
-                    p: 3,
                     width: { sm: `calc(100% - ${drawerWidth}px)` },
                     mt: '64px', //Altura del AppBar
-                    backgroundColor: 'background.default',
                     minHeight: '100vh',
+                    p: { xs: 1, sm: 2, md: 3},
+                    pt: {xs: 9, sm:10},
+                    bgcolor: theme.palette.background.default
                 }}
             >
-                <Container maxWidth="lg">
-                    <Outlet />
-                </Container>
+                <Outlet />
             </Box>
         </Box>
     );

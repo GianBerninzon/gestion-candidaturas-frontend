@@ -1,13 +1,10 @@
-import { Empresa, Reclutador, ReclutadorDTO } from "@/types";
+import { Reclutador, ReclutadorWithEmpresaDTO } from "@/types";
 import reclutadoresService from "@/services/reclutadoresService";
-import empresasService from "@/services/empresasService";
 import {
     Box,
     Button,
     Paper,
-    TextField,
     Typography,
-    LinearProgress,
     Table,
     TableBody,
     IconButton,
@@ -16,551 +13,292 @@ import {
     TableHead,
     TableRow,
     TableCell,
-    Tooltip,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    FormControl,
-    InputLabel,
-    OutlinedInput,
-    FormHelperText,
-    MenuItem,
-    Select
+    Alert,
+    CircularProgress,
+    Snackbar
 } from "@mui/material";
 import { 
     Add as AddIcon,
-    Search as SearchIcon,
     Visibility as VisibilityIcon,
     Edit as EditIcon,
-    Delete as DeleteIcon,
     Person as PersonIcon,
     LinkedIn as LinkedInIcon,
     Business as BusinessIcon
 } from "@mui/icons-material";
-import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useForm, Controller } from "react-hook-form";
-
-// Datos simulados para desarrollo (en producción vendrían de la API)
-const mockEmpresas: Empresa[] = [
-    {
-        id: '1',
-        nombre: 'Empresa ABC',
-        correo: 'contacto@empresaabc.com',
-        telefono: '123456789',
-        fechaCreacion: '2023-01-15',
-        fechaActualizacion: '2023-05-20'
-    },
-    {
-        id: '2',
-        nombre: 'Corporación XYZ',
-        correo: 'info@corporacionxyz.com',
-        telefono: '987654321',
-        fechaCreacion: '2023-02-10',
-        fechaActualizacion: '2023-06-15'
-    },
-    {
-        id: '3',
-        nombre: 'Tech Solutions',
-        correo: 'soporte@techsolutions.com',
-        telefono: '555555555',
-        fechaCreacion: '2023-03-05',
-        fechaActualizacion: '2023-07-10'
-    },
-    {
-        id: '4',
-        nombre: 'Startup Inc',
-        correo: 'hello@startupinc.com',
-        telefono: '666666666',
-        fechaCreacion: '2023-04-20',
-        fechaActualizacion: '2023-08-05'
-    },
-    {
-        id: '5',
-        nombre: 'Global Enterprises',
-        correo: 'info@globalenterprises.com',
-        telefono: '111222333',
-        fechaCreacion: '2023-05-15',
-        fechaActualizacion: '2023-09-01'
-    }
-];
-
-// Datos simulados de reclutadores
-const mockReclutadores: Reclutador[] = [
-    {
-        id: '1',
-        nombre: 'Ana Martínez',
-        empresa: mockEmpresas[0],
-        linkedinUrl: 'https://linkedin.com/in/anamartinez',
-        telefono: '611222333'
-    },
-    {
-        id: '2',
-        nombre: 'Carlos López',
-        empresa: mockEmpresas[1],
-        linkedinUrl: 'https://linkedin.com/in/carloslopez',
-        telefono: '622333444'
-    },
-    {
-        id: '3',
-        nombre: 'Elena Rodríguez',
-        empresa: mockEmpresas[0],
-        linkedinUrl: 'https://linkedin.com/in/elenarodriguez',
-        telefono: '633444555'
-    },
-    {
-        id: '4',
-        nombre: 'Javier Sánchez',
-        empresa: mockEmpresas[2],
-        linkedinUrl: 'https://linkedin.com/in/javiersanchez',
-        telefono: '644555666'
-    },
-    {
-        id: '5',
-        nombre: 'María González',
-        empresa: mockEmpresas[3],
-        linkedinUrl: 'https://linkedin.com/in/mariagonzalez',
-        telefono: '655666777'
-    }
-];
-
-// Interfaz para el formulario de reclutador
-interface ReclutadorFormData {
-    nombre: string;
-    empresaId: string;
-    linkedinUrl?: string;
-    telefono?: string;
-}
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import useAuthStore from "@/store/authStore";
 
 /**
- * Componente que muestra la lista de reclutadores y permite su gestión
- * Implementa funcionalidades de búsqueda, paginación y CRUD de reclutadores
+ * Componente para mostrar la lista de reclutadores
  */
-const ReclutadoresList = () => {
+const ReclutadoresList: React.FC = () => {
     // Estados para gestionar la lista de reclutadores
-    const [reclutadores, setReclutadores] = useState<Reclutador[]>([]);
-    const [empresas, setEmpresas] = useState<Empresa[]>([]);
+    const [reclutadores, setReclutadores] = useState<ReclutadorWithEmpresaDTO[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
-    const [filtroTexto, setFiltroTexto] = useState('');
-    const [filtroEmpresa, setFiltroEmpresa] = useState<string>('');
-    
-    // Estados para el diálogo de creación/edición
-    const [openDialog, setOpenDialog] = useState(false);
-    const [editingReclutador, setEditingReclutador] = useState<Reclutador | null>(null);
+    const [totalElements, setTotalElements] = useState(0);
+    const [retrying, setRetrying] = useState(false);
     
     const navigate = useNavigate();
-    const location = useLocation();
+    const {user} = useAuthStore();
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'ROOT';
 
-    // Configuración del formulario con react-hook-form
-    const { control, handleSubmit, reset, formState: { errors } } = useForm<ReclutadorFormData>();
+    // Cargar reclutadores con paginacion
+    const fetchReclutadores = async () => {
+        setLoading(true);
+        setError(null);
 
-    // Cargar datos al montar el componente
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                setLoading(true);
-                // Cargar empresas y reclutadores desde la API
-                const empresasResponse = await empresasService.getEmpresas(0, 100); // Cargar todas las empresas para el selector
-                const reclutadoresResponse = await reclutadoresService.getReclutadores(page, rowsPerPage, filtroTexto, filtroEmpresa);
-                
-                setEmpresas(empresasResponse.content);
-                setReclutadores(reclutadoresResponse.content);
-                setLoading(false);
-                
-                // Verificar si hay un ID de reclutador a editar en el estado de navegación
-                const state = location.state as { editReclutadorId?: string } | null;
-                if (state?.editReclutadorId) {
-                    try {
-                        const reclutadorToEdit = await reclutadoresService.getReclutadorById(state.editReclutadorId);
-                        handleOpenDialog(reclutadorToEdit);
-                        // Limpiar el estado para evitar que se abra el diálogo nuevamente al recargar
-                        window.history.replaceState({}, document.title);
-                    } catch (error) {
-                        console.error('Error al cargar el reclutador para editar:', error);
-                    }
-                }
-            } catch (error) {
-                console.error('Error al cargar datos:', error);
-                setLoading(false);
+
+        try {
+            const response = await reclutadoresService.getReclutadores(page, rowsPerPage);
+
+            if(response && response.content){
+                console.log(`Reclutadores cargados: ${response.content.length} de ${response.totalElements}`);
+                setReclutadores(response.content);
+                setTotalElements(response.totalElements);
+            }else {
+                console.warn('Respuesta vacia o sin contenido');
+                setReclutadores([]);
+                setTotalElements(0);
             }
-        };
-        
-        fetchData();
-    }, [location, page, rowsPerPage, filtroTexto, filtroEmpresa]);
+        } catch (err: any) {
+            console.error('Error al cargar reclutadores:', err);
 
-    // Gestión de paginación
-    const handleChangePage = (_event: unknown, newPage: number) => {
+            // Mensaje de error informativo
+            let errorMessage = 'Error al cargar reclutadores.';
+
+            if(err.response){
+                if(err.response.status === 500) {
+                    errorMessage += 'Error interno del servidor (500). Contacta con el administrador.';
+                }else if(err.response.status === 403){
+                    errorMessage += 'No tienes para ver estos reclutadores (403).';
+                }else if(err.response.data?.message){
+                    errorMessage += err.response.data.message;
+                }else {
+                    errorMessage += `Error ${err.response.status}: ${err.response.statusText}`;
+                }
+            }else if(err.request){
+                errorMessage += 'No se pudo conectar con el servidor. Verifica tu conexion.';
+            }else{
+                errorMessage += 'Error inesperado al procesar la solicitud.';
+            }
+
+            setError(errorMessage);
+            setReclutadores([]);
+            setTotalElements(0);
+        }finally{
+            setLoading(false);
+            setRetrying(false);
+        }
+    };
+
+    // Cargar reclutadores al montar el componente o cambiar de paginacion
+    useEffect(() => {
+        fetchReclutadores();
+    }, [page, rowsPerPage]);
+
+    // Manejadores de enventos
+    const handleChangePage = (_event: unknown, newPage: number) =>{
         setPage(newPage);
     };
 
-    const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setRowsPerPage(parseInt(event.target.value, 10));
-        setPage(0);
-    };
-    
-    // Refrescar datos cuando cambian los filtros
-    const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFiltroTexto(e.target.value);
-    };
-    
-    const handleEmpresaFilterChange = (e: React.ChangeEvent<{ value: unknown }>) => {
-        setFiltroEmpresa(e.target.value as string);
-    };
-
-    // Los datos ya vienen filtrados y paginados de la API
-    const reclutadoresPaginados = reclutadores;
-
-    // Gestión del diálogo de creación/edición
-    const handleOpenDialog = (reclutador?: Reclutador) => {
-        if (reclutador) {
-            setEditingReclutador(reclutador);
-            reset({
-                nombre: reclutador.nombre,
-                empresaId: reclutador.empresa.id,
-                linkedinUrl: reclutador.linkedinUrl || '',
-                telefono: reclutador.telefono || ''
-            });
-        } else {
-            setEditingReclutador(null);
-            reset({
-                nombre: '',
-                empresaId: '',
-                linkedinUrl: '',
-                telefono: ''
-            });
-        }
-        setOpenDialog(true);
-    };
-
-    const handleCloseDialog = () => {
-        setOpenDialog(false);
-        setEditingReclutador(null);
-    };
-
-    // Guardar reclutador (crear nuevo o actualizar existente)
-    const onSubmit = async (data: ReclutadorFormData) => {
-        try {
-            // Preparar los datos para enviar a la API
-            const reclutadorDTO: ReclutadorDTO = {
-                nombre: data.nombre,
-                empresaId: data.empresaId,
-                linkedinUrl: data.linkedinUrl || '',
-                telefono: data.telefono
-            };
-            
-            if (editingReclutador) {
-                // Actualizar reclutador existente
-                await reclutadoresService.updateReclutador(editingReclutador.id, reclutadorDTO);
-            } else {
-                // Crear nuevo reclutador
-                await reclutadoresService.createReclutador(reclutadorDTO);
-            }
-            
-            // Recargar la lista de reclutadores
-            const response = await reclutadoresService.getReclutadores(page, rowsPerPage, filtroTexto, filtroEmpresa);
-            setReclutadores(response.content);
-            
-            handleCloseDialog();
-        } catch (error) {
-            console.error('Error al guardar el reclutador:', error);
+    const handleChangeRowsPerPage = (evt: React.ChangeEvent<HTMLInputElement>) =>{
+        if(evt?.target?.value){
+            setRowsPerPage(parseInt(evt.target.value, 10));
+            setPage(0);
         }
     };
 
-    // Eliminar reclutador
-    const handleDeleteReclutador = async (id: string) => {
-        if (window.confirm('¿Estás seguro de que deseas eliminar este reclutador?')) {
-            try {
-                await reclutadoresService.deleteReclutador(id);
-                
-                // Recargar la lista de reclutadores
-                const response = await reclutadoresService.getReclutadores(page, rowsPerPage, filtroTexto, filtroEmpresa);
-                setReclutadores(response.content);
-            } catch (error) {
-                console.error('Error al eliminar el reclutador:', error);
-            }
-        }
+    const handleCreateReclutador = () => {
+        navigate('/reclutadores/new');
     };
 
-    // Ver detalles del reclutador
     const handleViewReclutador = (id: string) => {
         navigate(`/reclutadores/${id}`);
     };
 
-    return (
-        <Box sx={{ p: 3 }}>
-            <Typography variant="h4" gutterBottom>
-                Gestión de Reclutadores
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-                Administra la información de los reclutadores de las empresas
-            </Typography>
+    const handleEditReclutador = (id: string) => {
+        navigate(`/reclutadores/${id}/edit`)
+    };
 
-            {/* Barra de acciones y filtros */}
-            <Box sx={{ display: 'flex', mb: 3, gap: 2, flexWrap: 'wrap' }}>
-                <TextField
-                    label="Buscar reclutadores"
-                    variant="outlined"
-                    size="small"
-                    fullWidth
-                    sx={{ flex: 2, minWidth: '200px' }}
-                    value={filtroTexto}
-                    onChange={handleSearchChange}
-                    InputProps={{
-                        startAdornment: <SearchIcon color="action" sx={{ mr: 1 }} />
-                    }}
-                />
-                <FormControl 
-                    size="small" 
-                    sx={{ flex: 1, minWidth: '150px' }}
-                >
-                    <InputLabel id="empresa-filter-label">Filtrar por empresa</InputLabel>
-                    <Select
-                        labelId="empresa-filter-label"
-                        value={filtroEmpresa}
-                        label="Filtrar por empresa"
-                        onChange={handleEmpresaFilterChange}
+    const handleRetry = () => {
+        setRetrying(true);
+        fetchReclutadores();
+    };
+
+
+    return (
+        <Box sx={{ width: '100%' }}>
+            <Box sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                width: '100%',
+                maxWidth: '1000px',
+                mx: 'auto'
+            }}>
+                {/* Encabezado y boton de nuevo reclutador */}
+                <Box sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    mb: 3,
+                    width: '100%'
+                }}>
+                    <Typography variant="h4" component="h1" gutterBottom>
+                        Reclutadores
+                    </Typography>
+                    {isAdmin && (
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={<AddIcon />}
+                            onClick={handleCreateReclutador}
+                        >
+                            Nuevo Reclutador
+                        </Button>
+                    )}
+                </Box>
+
+                {/* Mensaje de error */}
+                {error && (
+                    <Alert
+                    severity="error"
+                    sx={{ mb:3, width: '100%' }}
+                    action={
+                        <Button
+                            color="inherit"
+                            size="small"
+                            onClick={handleRetry}
+                            disabled={retrying}
+                        >
+                            {retrying ? 'Reintentando...' : 'Reintentar'}
+                        </Button>
+                    }
                     >
-                        <MenuItem value="">
-                            <em>Todas</em>
-                        </MenuItem>
-                        {empresas.map((empresa) => (
-                            <MenuItem key={empresa.id} value={empresa.id}>
-                                {empresa.nombre}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpenDialog()}
-                    sx={{ whiteSpace: 'nowrap' }}
-                >
-                    Nuevo Reclutador
-                </Button>
+                        {error}
+                    </Alert>
+                )}
+
+                {/* Tabla de reclutadores */}
+                <Paper sx={{ width: '100%', overflow: 'hidden', mb:3 }}>
+                    {loading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                            <CircularProgress />
+                        </Box>
+                    ) : (
+                        <>
+                            <TableContainer sx={{ maxHeight: 440 }}>
+                                <Table stickyHeader>
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell align="center">Nombre</TableCell>
+                                            <TableCell align="center">Empresa</TableCell>
+                                            <TableCell align="center">LinkedIn</TableCell>
+                                            <TableCell align="center">Acciones</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {reclutadores.length > 0 ? (
+                                            reclutadores.map((reclutador) => (
+                                                <TableRow hover key={reclutador.id}>
+                                                    <TableCell align="center">
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <PersonIcon fontSize="small" sx={{ mr:1, color: 'primary.main', opacity: 0.7 }}/>
+                                                            {reclutador.nombre}
+                                                        </Box>
+                                                    </TableCell>
+                                                    <TableCell align="center">
+                                                        {reclutador.empresa ? (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                <BusinessIcon fontSize="small" sx={{ mr:1, color:'secondary.main', opacity: 0.7 }} />
+                                                                {reclutador.empresa.nombre}
+                                                            </Box>
+                                                        ): (
+                                                            'N/A'
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell align="center">
+                                                        {reclutador.linkinUrl ? (
+                                                            <a
+                                                                href={reclutador.linkinUrl.startsWith('https') ? reclutador.linkinUrl: `http://${reclutador.linkinUrl}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0077b5', textDecoration:'none' }}
+                                                            >
+                                                                <LinkedInIcon fontSize="small" sx={{ mr:0.5 }} />
+                                                                Perfil
+                                                            </a>
+                                                        ): (
+                                                            'No disponible'
+                                                        )}
+                                                    </TableCell>
+                                                    <TableCell align="center">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleViewReclutador(reclutador.id)}
+                                                            title="Ver Detaller"
+                                                        >
+                                                            <VisibilityIcon fontSize="small" />
+                                                        </IconButton>
+                                                        {isAdmin && (
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => handleEditReclutador(reclutador.id)}
+                                                                title="Editar"
+                                                            >
+                                                                <EditIcon fontSize="small" />
+                                                            </IconButton>
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))
+                                        ): (
+                                            <TableRow>
+                                                <TableCell colSpan={4} align="center">
+                                                    No se encontraron Reclutadores
+                                                </TableCell>
+                                            </TableRow>
+                                        )}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                            <TablePagination
+                                component="div"
+                                count={totalElements}
+                                page={page}
+                                onPageChange={handleChangePage}
+                                rowsPerPage={rowsPerPage}
+                                onRowsPerPageChange={handleChangeRowsPerPage}
+                                labelRowsPerPage="Filas por pagina:"
+                                labelDisplayedRows={({ from, to, count }) => 
+                                    `${from}-${to} de ${count !== -1 ? count : `mas de ${to}`}`
+                                }
+                                rowsPerPageOptions={[5, 10, 25]}
+                            />
+                        </>
+                    )}
+                </Paper>
             </Box>
 
-            {/* Tabla de reclutadores */}
-            <Paper sx={{ width: '100%', overflow: 'hidden' }}>
-                {loading ? (
-                    <LinearProgress />
-                ) : (
-                    <>
-                        <TableContainer sx={{ maxHeight: 440 }}>
-                            <Table stickyHeader>
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell>Nombre</TableCell>
-                                        <TableCell>Empresa</TableCell>
-                                        <TableCell>Contacto</TableCell>
-                                        <TableCell align="right">Acciones</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {reclutadoresPaginados.map((reclutador) => (
-                                        <TableRow key={reclutador.id} hover>
-                                            <TableCell>
-                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                    <PersonIcon fontSize="small" sx={{ mr: 1, color: 'action.active' }} />
-                                                    {reclutador.nombre}
-                                                </Box>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                                    <BusinessIcon fontSize="small" sx={{ mr: 1, color: 'action.active' }} />
-                                                    {reclutador.empresa.nombre}
-                                                </Box>
-                                            </TableCell>
-                                            <TableCell>
-                                                {reclutador.linkedinUrl && (
-                                                    <Tooltip title="Perfil de LinkedIn">
-                                                        <IconButton 
-                                                            size="small" 
-                                                            color="primary"
-                                                            href={reclutador.linkedinUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                        >
-                                                            <LinkedInIcon fontSize="small" />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                )}
-
-                                            </TableCell>
-                                            <TableCell align="right">
-                                                <Tooltip title="Ver detalles">
-                                                    <IconButton
-                                                        size="small"
-                                                        color="info"
-                                                        onClick={() => handleViewReclutador(reclutador.id)}
-                                                    >
-                                                        <VisibilityIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Editar">
-                                                    <IconButton
-                                                        size="small"
-                                                        color="primary"
-                                                        onClick={() => handleOpenDialog(reclutador)}
-                                                    >
-                                                        <EditIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Eliminar">
-                                                    <IconButton
-                                                        size="small"
-                                                        color="error"
-                                                        onClick={() => handleDeleteReclutador(reclutador.id)}
-                                                    >
-                                                        <DeleteIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                    {reclutadoresPaginados.length === 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={4} align="center">
-                                                No se encontraron reclutadores
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                        <TablePagination
-                            component="div"
-                            count={reclutadoresFiltrados.length}
-                            page={page}
-                            onPageChange={handleChangePage}
-                            rowsPerPage={rowsPerPage}
-                            onRowsPerPageChange={handleChangeRowsPerPage}
-                            labelRowsPerPage="Filas por página:"
-                            labelDisplayedRows={({ from, to, count }) =>
-                                `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`
-                            }
-                            rowsPerPageOptions={[5, 10, 25]}
-                        />
-                    </>
-                )}
-            </Paper>
-
-            {/* Diálogo para crear/editar reclutador */}
-            <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-                <DialogTitle>
-                    {editingReclutador ? 'Editar Reclutador' : 'Nuevo Reclutador'}
-                </DialogTitle>
-                <form onSubmit={handleSubmit(onSubmit)}>
-                    <DialogContent>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <Controller
-                                name="nombre"
-                                control={control}
-                                rules={{ required: 'El nombre es obligatorio' }}
-                                render={({ field }) => (
-                                    <FormControl fullWidth error={!!errors.nombre}>
-                                        <InputLabel htmlFor="nombre">Nombre del reclutador</InputLabel>
-                                        <OutlinedInput
-                                            id="nombre"
-                                            label="Nombre del reclutador"
-                                            {...field}
-                                        />
-                                        {errors.nombre && (
-                                            <FormHelperText>{errors.nombre.message}</FormHelperText>
-                                        )}
-                                    </FormControl>
-                                )}
-                            />
-                            
-                            <Controller
-                                name="empresaId"
-                                control={control}
-                                rules={{ required: 'La empresa es obligatoria' }}
-                                render={({ field }) => (
-                                    <FormControl fullWidth error={!!errors.empresaId}>
-                                        <InputLabel id="empresa-label">Empresa</InputLabel>
-                                        <Select
-                                            labelId="empresa-label"
-                                            id="empresa"
-                                            label="Empresa"
-                                            {...field}
-                                        >
-                                            {empresas.map((empresa) => (
-                                                <MenuItem key={empresa.id} value={empresa.id}>
-                                                    {empresa.nombre}
-                                                </MenuItem>
-                                            ))}
-                                        </Select>
-                                        {errors.empresaId && (
-                                            <FormHelperText>{errors.empresaId.message}</FormHelperText>
-                                        )}
-                                    </FormControl>
-                                )}
-                            />
-                            
-                            <Controller
-                                name="linkedinUrl"
-                                control={control}
-                                rules={{ 
-                                    pattern: {
-                                        value: /^(https?:\/\/)?(www\.)?linkedin\.com\/in\/[\w-]+\/?$/,
-                                        message: 'URL de LinkedIn inválida'
-                                    }
-                                }}
-                                render={({ field }) => (
-                                    <FormControl fullWidth error={!!errors.linkedinUrl}>
-                                        <InputLabel htmlFor="linkedinUrl">URL de LinkedIn</InputLabel>
-                                        <OutlinedInput
-                                            id="linkedinUrl"
-                                            label="URL de LinkedIn"
-                                            {...field}
-                                        />
-                                        {errors.linkedinUrl && (
-                                            <FormHelperText>{errors.linkedinUrl.message}</FormHelperText>
-                                        )}
-                                    </FormControl>
-                                )}
-                            />
-                            
-                            <Controller
-                                name="telefono"
-                                control={control}
-                                rules={{ 
-                                    pattern: {
-                                        value: /^[0-9]{9,}$/,
-                                        message: 'Debe contener al menos 9 dígitos'
-                                    }
-                                }}
-                                render={({ field }) => (
-                                    <FormControl fullWidth error={!!errors.telefono}>
-                                        <InputLabel htmlFor="telefono">Teléfono</InputLabel>
-                                        <OutlinedInput
-                                            id="telefono"
-                                            label="Teléfono"
-                                            {...field}
-                                        />
-                                        {errors.telefono && (
-                                            <FormHelperText>{errors.telefono.message}</FormHelperText>
-                                        )}
-                                    </FormControl>
-                                )}
-                            />
-                        </Box>
-                    </DialogContent>
-                    <DialogActions>
-                        <Button onClick={handleCloseDialog} color="inherit">
-                            Cancelar
-                        </Button>
-                        <Button type="submit" variant="contained" color="primary">
-                            {editingReclutador ? 'Actualizar' : 'Crear'}
-                        </Button>
-                    </DialogActions>
-                </form>
-            </Dialog>
+            {/* Snackbar para errores de red */}
+            <Snackbar
+                open={!!error && error.includes('No se pudo conectar')}
+                autoHideDuration={6000}
+                message="Error de conexion con el servidor"
+                action={
+                    <Button
+                        color="secondary"
+                        size="small"
+                        onClick={handleRetry}
+                    >
+                        Reintentar
+                    </Button>
+                }
+            />
         </Box>
     );
 };
