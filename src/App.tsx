@@ -18,6 +18,7 @@ import EmpresaDetail from './pages/empresas/EmpresaDetail';
 import ReclutadoresList from './pages/reclutadores/ReclutadoresList';
 import ReclutadorForm from './pages/reclutadores/ReclutadorForm';
 import ReclutadorDetail from './pages/reclutadores/ReclutadorDetail';
+import { ToastContainer } from 'react-toastify';
 
 function App() {
   const isDev = import.meta.env.DEV;
@@ -65,8 +66,7 @@ function App() {
     <ThemeProvider theme={theme}>
       {/* CssBaseline normaliza los estilos base */}
       <CssBaseline />
-
-    
+      <ToastContainer />
       <BrowserRouter>
         <Routes>
           {/* Rutas Publicas */}

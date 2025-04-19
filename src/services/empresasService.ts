@@ -1,5 +1,5 @@
 import apiService from './api';
-import { Candidatura, Empresa, EmpresaDTO, Response } from '@/types';
+import { Candidatura, Empresa, EmpresaDTO, EmpresaWithCandidaturas, EmpresaWithUsersDTO, Response } from '@/types';
 
 const BASE_URL = '/empresas';
 
@@ -27,8 +27,18 @@ class EmpresasService {
    * Obtiene una empresa por su ID
    * @param id ID de la empresa
    */
-  async getEmpresaById(id: string) {
-    return apiService.get<Empresa>(`${BASE_URL}/${id}`);
+  async getEmpresaById(id: string, includeCandidatuas: boolean = false): Promise<Empresa | EmpresaWithCandidaturas> {
+    try {
+      const url = includeCandidatuas
+        ? `${BASE_URL}/${id}?includeCandidaturas=true`
+        : `${BASE_URL}/${id}`;
+      const response = await apiService.get<Empresa | EmpresaWithCandidaturas>(url);
+      console.log('Respuesta del backend para empresa:', response);
+      return response;
+    } catch (error) {
+      console.error(`Error al obtener empresa ${id}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -85,10 +95,9 @@ class EmpresasService {
   /**
    * Obtiene empresas con informacion de usuario asociados (Solo administradores)
    */
-  async getEmpresasWithUsers(){
-    return apiService.get(`${BASE_URL}/with-users`);
+  async getEmpresasWithUsers(): Promise<EmpresaWithUsersDTO[]>{
+    return apiService.get<EmpresaWithUsersDTO[]>(`${BASE_URL}/with-users`);
   }
-
   /**
    * Cache de empresas para rendimiento
    * Este es un metodo opcional para mejorar el rendimiento evitando llamadas repetidas a la API

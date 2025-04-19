@@ -1,7 +1,7 @@
 import empresasService from "@/services/empresasService";
 import useAuthStore from "@/store/authStore";
 import { Empresa } from "@/types";
-import { Alert, Box, Button, CircularProgress, Grid, IconButton, Paper, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, IconButton, Paper, TextField, Typography } from "@mui/material";
 import {
     ArrowBack as ArrowBackIcon, 
     Cancel as CancelIcon,
@@ -9,6 +9,7 @@ import {
 }from '@mui/icons-material';
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from 'react-toastify';
 
 const EmpresaForm: React.FC = () => {
     const {id} = useParams<{ id: string }>();
@@ -30,24 +31,37 @@ const EmpresaForm: React.FC = () => {
     const [success, setSuccess] = useState<string | null>(null);
 
     useEffect(() => {
-        // Si estamos en modo edicion, cargar la empresa
-        if(isEdit){
-        }
-        const fetchEmpresas = async () => {
-            setLoading(true);
-            try {
-                const data = await empresasService.getEmpresaById(id as string);
-                setEmpresa(data);
-            } catch (err: any) {
-                console.error('Error al cargar empresa:', err);
-                setError('Error al cargar los datos de la empresa. Por favor, intetalo de nuevo.');
-            } finally {
-                setLoading(false);
-            }
-        };
+        // Si estamos en modo edicion, cargar la empresa y verificar permisos
+        if(id){
+            const fetchEmpresas = async () => {
+                setLoading(true);
+                try {
+                    const data = await empresasService.getEmpresaById(id as string);
+                    setEmpresa({
+                        id: data.id,
+                        nombre: data.nombre,
+                        correo: data.correo || '',
+                        telefono: data.telefono || ''
+                    });
 
-        fetchEmpresas();
-    }, [id, isEdit]);
+                    //Verificar si puede editar (debe ser ADMIN/ROOT o tener candidaturas en esta empresa)
+                    const canEdit = user?.role === 'ADMIN' || user?.role === 'ROOT' || data.userHasCandidatura;
+                     if(!canEdit){
+                        // Redirigir si no tiene permisos
+                        navigate('/empresas');
+                        toast.error('No tienes permisos para editar esta empresa');
+                     }
+                } catch (err: any) {
+                    console.error('Error al cargar empresa:', err);
+                    setError('Error al cargar los datos de la empresa. Por favor, intetalo de nuevo.');
+                    navigate('/empresas');
+                } finally {
+                    setLoading(false);
+                }
+            };
+            fetchEmpresas();
+        }
+    }, [id, navigate, user]);
 
     // Manejar cambios en los campor del formulario
     const handleChage = (e: React.ChangeEvent<HTMLInputElement>) => {

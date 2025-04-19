@@ -24,6 +24,7 @@ export interface Empresa {
     nombre: string;
     correo: string;
     telefono: string;
+    userHasCandidatura?: boolean; // Indica si el usuario tiene candidaturas en esta empresa
 }
 
 export interface EmpresaDTO{
@@ -38,6 +39,10 @@ export interface EmpresaWithUsersDTO{
     correo?: string;
     telefono?: string;
     usuariosAsociados: UserResumenDTO[];    
+}
+
+export interface EmpresaWithCandidaturas extends Empresa{
+    candidaturas?: CandidaturaWithEmpresaDTO[];
 }
 
 export interface UserResumenDTO{
@@ -77,7 +82,7 @@ export interface Candidatura {
     notas: string;
     empresaId?: string; 
     reclutadores?: Reclutador[];
-    user?: User; // Usuario asociado a la candidatura
+    userInfo?: UserResumenDTO; // Usuario asociado a la candidatura
 }
 
 // Interfaz para datos de pregunta
@@ -102,11 +107,14 @@ export interface RegisterRequest {
 }
 
 export interface CandidaturaDTO {
+    id: string;
     empresaId: string;
     cargo: string;
     fecha: string;
     estado: EstadoCandidatura;
     notas: string;
+    userInfo?: UserResumenDTO;
+    reclutadores?: ReclutadorDTO[];
 }
 
 export interface CandidaturaWithEmpresaDTO{

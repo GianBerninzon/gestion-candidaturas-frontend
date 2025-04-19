@@ -6,7 +6,7 @@ import {
     Edit as EditIcon,
     Search as SearchIcon,
     Delete as DeleteIcon,
-    Check as CheckIcon
+    Visibility as VisibilityIcon
 } from "@mui/icons-material";
 import {
     Alert,
@@ -66,38 +66,54 @@ const EmpresasList: React.FC = () => {
     const user = useAuthStore(state => state.user);
     const isAdmin = user?.role === 'ADMIN' || user?.role == 'ROOT';
 
+    // Función para verificar si el usuario puede editar/eliminar una empresa
+    const canEditEmpresa = (empresa: Empresa) => {
+        // Administradores y ROOT pueden editar cualquier empresa
+        if(user?.role === 'ADMIN' || user?.role === 'ROOT'){
+            return true;
+        }
+
+        // Los usuarios normales solo pueden editar empresas asociadas a sus candidaturas
+        return empresa.userHasCandidatura === true;
+    };
+
+
+
     // Cargar empresas con paginacion y filtros
     const fetchEmpresas = async () => {
-        console.log('EmpresasList - Cargar empresas');
         setLoading(true);
-        setError(null);
 
         try {
-            let response;
+            // Si es ADMIN, usamos endpoint con informacion de usuarios
+            if(isAdmin){
+                const data = await empresasService.getEmpresasWithUsers();
 
-            // Si hay un filtro de nombre, usamos el endpoint de busqueda
-            if(filtroNombre){
-                response = await empresasService.buscarPorNombre(
-                    filtroNombre,
-                    page,
-                    rowsPerPage
-                );
+                const empresas = data.map(empresa => {
+                    return {
+                        id: empresa.id,
+                    nombre: empresa.nombre,
+                    correo: empresa.correo || '',
+                    telefono: empresa.telefono || '',
+                    userHasCandidatura: true, // Admin siempre puede editar
+                    usuariosAsociados: empresa.usuariosAsociados
+                    }
+                });
+
+                setEmpresas(empresas);
+                setTotalElements(empresas.length);
             } else{
-                // De lo contrario, obtenemos todas las empresas
-                response = await empresasService.getEmpresas(
-                    page,
-                    rowsPerPage
-                );
-            }
+                // Para usuarios USER
+                let response;
+                if(filtroNombre){
+                    response = await empresasService.buscarPorNombre(
+                        filtroNombre, page, rowsPerPage
+                    );
+                }else {
+                    response = await empresasService.getEmpresas(page, rowsPerPage);
+                }
 
-            if(response && response.content){
-                console.log(`Empresas cargadas: ${response.content.length} de ${response.totalElements}`);
                 setEmpresas(response.content);
                 setTotalElements(response.totalElements);
-            }else{
-                console.warn('Respuesta vacia o sin contenido');
-                setEmpresas([]);
-                setTotalElements(0);
             }
         } catch (err: any) {
             console.error('Error al cargar empresas:', err);
@@ -126,7 +142,6 @@ const EmpresasList: React.FC = () => {
             setTotalElements(0);
         }finally{
             setLoading(false);
-            setRetrying(false);
         }
     };
 
@@ -385,22 +400,33 @@ const EmpresasList: React.FC = () => {
                                                     <TableCell align="center">{empresa.correo || 'N/A'}</TableCell>
                                                     <TableCell align="center">{empresa.telefono || 'N/A'}</TableCell>
                                                     <TableCell align="center">
-                                                        <Tooltip title="Editar empresa">
-                                                            <IconButton
-                                                                size="small"
-                                                                onClick={() => handleEditEmpresa(empresa.id)}
-                                                            >
-                                                                <EditIcon fontSize="small" />
-                                                            </IconButton>
-                                                        </Tooltip>
-                                                        {isAdmin && (
-                                                            <Tooltip title="Eliminar empresa">
+                                                        {canEditEmpresa(empresa) ? (
+                                                            <>
+                                                                <Tooltip title="Editar empresa">
+                                                                    <IconButton
+                                                                        size="small"
+                                                                        onClick={() => handleEditEmpresa(empresa.id)}
+                                                                    >
+                                                                        <EditIcon fontSize="small" />
+                                                                    </IconButton>
+                                                                </Tooltip>
+                                                                <Tooltip title="Eliminar empresa">
+                                                                    <IconButton
+                                                                        size="small"
+                                                                        onClick={() => handleDeleteConfirm(empresa.id)}
+                                                                        color="error"
+                                                                    >
+                                                                        <DeleteIcon fontSize="small" />
+                                                                </IconButton>
+                                                                </Tooltip>
+                                                            </>
+                                                        ): (
+                                                            <Tooltip title="Ver empresa">
                                                                 <IconButton
                                                                     size="small"
-                                                                    onClick={() => handleDeleteConfirm(empresa.id)}
-                                                                    color="error"
+                                                                    onClick={() => handleViewEmpresa(empresa.id)}
                                                                 >
-                                                                    <DeleteIcon fontSize="small" />
+                                                                    <VisibilityIcon fontSize="small" />
                                                                 </IconButton>
                                                             </Tooltip>
                                                         )}

@@ -1,4 +1,4 @@
-import { Candidatura, Empresa, EstadoCandidatura } from '@/types';
+import { Candidatura, EmpresaWithCandidaturas, EstadoCandidatura } from '@/types';
 import {
     Box,
     Button,
@@ -17,7 +17,14 @@ import {
     TableHead,
     TableBody,
     Chip,
-    Tooltip
+    Tooltip,
+    Checkbox,
+    DialogTitle,
+    DialogContentText,
+    Snackbar,
+    DialogActions,
+    DialogContent,
+    Dialog
 } from '@mui/material';
 import {
     ArrowBack as ArrowBackIcon,
@@ -25,7 +32,9 @@ import {
     Email as EmailIcon,
     Phone as PhoneIcon,
     Business as BusinessIcon,
-    Visibility as VisibilityIcon
+    Visibility as VisibilityIcon,
+    Delete as DeleteIcon,
+    Person as PersonIcon
 } from '@mui/icons-material';
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -56,8 +65,9 @@ const EmpresaDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
     const {user} = useAuthStore();
+    const isAdmin = user?.role === 'ADMIN' || user?.role === 'ROOT';
     
-    const [empresa, setEmpresa] = useState<Empresa | null>(null);
+    const [empresa, setEmpresa] = useState<EmpresaWithCandidaturas | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -65,14 +75,45 @@ const EmpresaDetail: React.FC = () => {
     const [candidaturas, setCandidaturas] = useState<Candidatura[]>([]);
     const [loadingCandidaturas, setLoadingCandidaturas] = useState(false);
     const [errorCandidaturas, setErrorCandidaturas] = useState<string | null>(null);
+    const [selectedCandidaturas, setSelectedCandidaturas] = useState<string[]>([]);
+    const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+    const [deletingCandidaturas, setDeletingCandidaturas] = useState(false);
+    const [deleteSuccess, setDeleteSuccess] = useState(false);
 
+    // Detectar si el usuario puede editar la empresa
+    const [canEdit, setCanEdit] = useState<boolean>(false);
+
+    useEffect(() => {
+        // Comprobar si puede editar cuando se carga la empresa y el usuario esta autenticado
+        if(empresa && user){
+            // ADMIN y ROOT pueden editar cualquier empresa
+            if(user.role === 'ADMIN' || user.role === 'ROOT'){
+                setCanEdit(true);
+            }else {
+                // Para usuario USER, verificar si tiene candidaturas en esta empresa
+                setCanEdit(!!empresa.userHasCandidatura);
+            }
+        }
+    }, [empresa, user]);
+    
     // Cargar los datos de la empresa
     useEffect(() => {
         const fetchEmpresa = async () => {
             setLoading(true);
             try {
-                const data = await empresasService.getEmpresaById(id as string);
+                // Obtener empresa con candidaturas incluidas para ADMINS
+                const incluirCandidaturas = user?.role === 'ADMIN' || user?.role === 'ROOT';
+                const data = await empresasService.getEmpresaById(
+                    id as string, 
+                    incluirCandidaturas
+                );
                 setEmpresa(data);
+
+                // Si es admin y la empresa tiene candidaturas, mostrarlas directamente
+                if(incluirCandidaturas && 'candidaturas' in data){
+                    console.log('Candidaturas desde la respuesta empresa:', data.candidaturas);
+                    setCandidaturas(data.candidaturas || []);
+                }
             } catch (err:any) {
                 console.error('Error al cargar empresa:', err);
                 setError('Error al cargar los datos de la empresa. Por favor, intetalo de nuevo.');
@@ -82,11 +123,13 @@ const EmpresaDetail: React.FC = () => {
         };
 
         fetchEmpresa();
-    }, [id]);
+    }, [id, user]);
 
     // Cargar las candidaturas asociadas a esta empresa
     useEffect(() =>{
-        if(!id) return;
+        //Solo cargar candidaturas separadamente si es un usuario normal
+        //Los administradores ya reciben las candidaturas en la respuesta de la empresa
+        if(!id || !empresa || user?.role === 'ADMIN' || user?.role === 'ROOT') return;
 
         const fetchCandidaturas = async () =>{
             setLoadingCandidaturas(true);
@@ -116,11 +159,64 @@ const EmpresaDetail: React.FC = () => {
         if(empresa){
             fetchCandidaturas();
         }
-    }, [id, empresa]);
+    }, [id, empresa, user]);
 
     // Manejador para ver detalles de una candidatura
     const handleViewCandidatura = (candidaturaId: string) => {
         navigate(`/candidaturas/${candidaturaId}`);
+    };
+
+    // Función para manejar la selección de candidaturas
+    const handleSelectCandidatura = (id: string) => {
+        setSelectedCandidaturas(prev => {
+            if(prev.includes(id)){
+                return prev.filter(candidaturaId => candidaturaId !== id);
+            }else{
+                return [...prev, id];
+            }
+        });
+    };
+
+    // Función para seleccionar todas las candidaturas
+    const handleSelectAllCandidaturas = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if(event.target.checked){
+            const allIds = candidaturas.map(candidatura => candidatura.id);
+            setSelectedCandidaturas(allIds);
+        }else{
+            setSelectedCandidaturas([]);
+        }
+    };
+
+    // Función para abrir el diálogo de confirmación de eliminación
+    const handleDeleteCandidaturasConfirm = () => {
+        setOpenDeleteDialog(true);
+    };
+
+    // Función para cerrar el diálogo de confirmación
+    const handleCloseDeleteDialog = () => {
+        setOpenDeleteDialog(false);
+    };
+
+    // Función para eliminar candidaturas seleccionadas
+    const handleDeleteCandidaturas = async () => {
+        if(selectedCandidaturas.length === 0) return;
+
+        setDeletingCandidaturas(true);
+
+        try {
+            await candidaturasService.deleteCandidaturasBatch(selectedCandidaturas);
+            setDeleteSuccess(true);
+
+            // Actualizar la lista de candidaturas quitando las eliminadas
+            setCandidaturas(candidaturas.filter(c => !selectedCandidaturas.includes(c.id)));
+            setSelectedCandidaturas([]);
+        } catch (err) {
+            console.error('Error al eliminar candidaturas: ', err);
+            setErrorCandidaturas('Error al eliminar las candidaturas seleccionadas.');
+        }finally{
+            setDeletingCandidaturas(false);
+            setOpenDeleteDialog(false);
+        }
     };
 
     if(loading){
@@ -188,14 +284,17 @@ const EmpresaDetail: React.FC = () => {
                             Detalles de Empresa
                         </Typography>
                     </Box>
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        startIcon={<EditIcon />}
-                        onClick={() => navigate(`/empresas/${id}/edit`)}
-                    >
-                        Editar
-                    </Button>
+                    {canEdit && (
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={<EditIcon />}
+                            onClick={() => navigate(`/empresas/${id}/edit`)}
+                        >
+                            Editar Empresa
+                        </Button>
+                    )}
+                    
                 </Box>
 
                 <Card sx={{ mb:4 }}>
@@ -259,9 +358,23 @@ const EmpresaDetail: React.FC = () => {
                 </Card>
 
                 {/* Seccion de candidaturas asociadas a esta empresa */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
                     Candidaturas asociadas a esta empresa
                 </Typography>
+
+                {isAdmin && selectedCandidaturas.length > 0 && (
+                    <Button
+                        variant="outlined"
+                        color='error'
+                        startIcon={<DeleteIcon />}
+                        onClick={handleDeleteCandidaturasConfirm}
+                    >
+                        Eliminar seleccionadas ({selectedCandidaturas.length})
+                    </Button>
+                )}
+                </Box>
+                
 
                 <Paper sx={{ p: 2, mb: 4 }}>
                     {loadingCandidaturas ? (
@@ -277,19 +390,41 @@ const EmpresaDetail: React.FC = () => {
                             No hay candidaturas asociadas a esta empresa.
                         </Alert>
                     ) : (
-                        <TableContainer>
+                        <>
+                            <TableContainer>
                             <Table>
                                 <TableHead>
-                                    <TableRow>
-                                        <TableCell align='center'>Cargo</TableCell>
-                                        <TableCell align='center'>Fecha</TableCell>
-                                        <TableCell align='center'>Estado</TableCell>
-                                        <TableCell align='center'>Acciones</TableCell>
+                                    <TableRow sx={{ backgroundColor: 'primary.main'}}>
+                                        {isAdmin && (
+                                            <TableCell padding='checkbox' sx={{ color: 'white'}}>
+                                                <Checkbox 
+                                                    color='default'
+                                                    indeterminate = {selectedCandidaturas.length > 0 && selectedCandidaturas.length < candidaturas.length}
+                                                    checked = {candidaturas.length > 0 && selectedCandidaturas.length === candidaturas.length}
+                                                    onChange={handleSelectAllCandidaturas}
+                                                    sx={{color: 'white'}}
+                                                />
+                                            </TableCell>
+                                        )}
+                                        <TableCell align='center' sx={{ color: 'white', fontWeight: 'bold'}}>Cargo</TableCell>
+                                        <TableCell align='center' sx={{ color: 'white', fontWeight: 'bold'}}>Fecha</TableCell>
+                                        <TableCell align='center' sx={{ color: 'white', fontWeight: 'bold'}}>Estado</TableCell>
+                                        <TableCell align='center' sx={{ color: 'white', fontWeight: 'bold'}}>Usuario</TableCell>
+                                        <TableCell align='center' sx={{ color: 'white', fontWeight: 'bold'}}>Reclutador</TableCell>
+                                        <TableCell align='center' sx={{ color: 'white', fontWeight: 'bold'}}>Acciones</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
                                     {candidaturas.map((candidatura) => (
                                         <TableRow key={candidatura.id} hover>
+                                            {isAdmin && (
+                                                <TableCell padding='checkbox'>
+                                                    <Checkbox
+                                                        checked={selectedCandidaturas.includes(candidatura.id)}
+                                                        onChange={() => handleSelectCandidatura(candidatura.id)}
+                                                    />
+                                                </TableCell>
+                                            )}
                                             <TableCell align='center'>{candidatura.cargo}</TableCell>
                                             <TableCell align='center'>
                                                 {new Date(candidatura.fecha).toLocaleDateString()}
@@ -302,6 +437,26 @@ const EmpresaDetail: React.FC = () => {
                                                 />
                                             </TableCell>
                                             <TableCell align='center'>
+                                                {candidatura.userInfo ? (
+                                                    <Tooltip title={`Usuario: ${candidatura.userInfo.username}`}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                                            <PersonIcon fontSize='small' sx={{ mr: 1,color: 'primary.main', opacity: 0.7}} />
+                                                            {candidatura.userInfo.username}
+                                                        </Box>
+                                                    </Tooltip>
+                                                ) : 'N/A'}
+                                            </TableCell>
+                                            <TableCell align='center'>
+                                                {candidatura.reclutadores && candidatura.reclutadores.length > 0 ? (
+                                                    <Tooltip title={`Reclutador: ${candidatura.reclutadores[0].nombre}`}>
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                                            <PersonIcon fontSize='small' sx={{ mr:1, color:'secondary.main', opacity: 0.7}} />
+                                                            {candidatura.reclutadores[0].nombre}
+                                                        </Box>
+                                                    </Tooltip>
+                                                ) : 'Sin reclutador'}
+                                                </TableCell>
+                                                <TableCell align="center">
                                                 <Tooltip title="Ver detalles">
                                                     <IconButton
                                                         size='small'
@@ -310,14 +465,71 @@ const EmpresaDetail: React.FC = () => {
                                                         <VisibilityIcon fontSize='small' />
                                                     </IconButton>
                                                 </Tooltip>
+                                                {isAdmin && (
+                                                    <Tooltip title="Eliminar candidatura">
+                                                        <IconButton
+                                                            size='small'
+                                                            color='error'
+                                                            onClick={() => {
+                                                                setSelectedCandidaturas([candidatura.id]);
+                                                                handleDeleteCandidaturasConfirm();
+                                                            }}
+                                                        >
+                                                            <DeleteIcon fontSize='small' />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     ))}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        </>
                     )}
                 </Paper>
+                {/* Diálogo de confirmación para eliminar candidaturas */}
+                <Dialog
+                    open={openDeleteDialog}
+                    onClose={handleCloseDeleteDialog}
+                >
+                    <DialogTitle>
+                        {selectedCandidaturas.length > 1
+                            ? `Eliminar candidaturas seleccionadas`
+                            : `Eliminar candidatura`}
+                    </DialogTitle>
+                    <DialogContent>
+                        <DialogContentText>
+                            {selectedCandidaturas.length > 1 
+                                ? `¿Estás seguro de eliminar ${selectedCandidaturas.length} candidaturas seleccionadas? Esta acción no se puede deshacer.`
+                                : `¿Estás seguro de eliminar esta candidatura? Esta acción no se puede deshacer.`}
+                        </DialogContentText>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button
+                            onClick={handleCloseDeleteDialog}
+                            color='primary'
+                        >
+                            Cancelar
+                        </Button>
+                        <Button
+                            onClick={handleDeleteCandidaturas}
+                            color='error'
+                            variant='contained'
+                            disabled={deletingCandidaturas}
+                        >
+                            {deletingCandidaturas ? <CircularProgress size={20} /> : 'Eliminar'}
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+
+            {/* Snackbar para éxito de eliminación */}
+            <Snackbar
+                open={deleteSuccess}
+                autoHideDuration={3000}
+                onClose={() => setDeleteSuccess(false)}
+                message='Candidatura eliminada correctamente'
+            />
             </Box>
         </Box>
     );
