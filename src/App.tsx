@@ -5,7 +5,6 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './MainLayout';
-import { Dashboard } from '@mui/icons-material';
 import CandidaturaForm from './pages/candidaturas/CandidaturaForm';
 import CandidaturaDetail from './pages/candidaturas/CandidaturaDetail';
 
@@ -19,6 +18,7 @@ import ReclutadoresList from './pages/reclutadores/ReclutadoresList';
 import ReclutadorForm from './pages/reclutadores/ReclutadorForm';
 import ReclutadorDetail from './pages/reclutadores/ReclutadorDetail';
 import { ToastContainer } from 'react-toastify';
+import Dashboard from './pages/Dashboard';
 
 function App() {
   const isDev = import.meta.env.DEV;
