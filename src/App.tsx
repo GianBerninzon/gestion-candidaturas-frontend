@@ -5,7 +5,7 @@ import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './MainLayout';
-import CandidaturaForm from './pages/candidaturas/CandidaturaForm';
+import CandidaturaForm from './pages/candidaturas/CandidaturaFormWithPreguntas';
 import CandidaturaDetail from './pages/candidaturas/CandidaturaDetail';
 
 // Importaciones para Material UI Theme
