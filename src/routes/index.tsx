@@ -21,7 +21,7 @@ const Dashboard = lazy(() => import('../pages/Dashboard'));
 // Paginas de candidaturas
 const CandidaturasList = lazy(() => import('../pages/candidaturas/CandidaturasList'));
 const CandidaturaDetail = lazy(() => import('../pages/candidaturas/CandidaturaDetail'));
-const CandidaturaForm = lazy(() => import('../pages/candidaturas/CandidaturaForm'));
+const CandidaturaForm = lazy(() => import('../pages/candidaturas/CandidaturaFormFinal'));
 
 {/* Rutas para empresas */}
 const EmpresaForm = lazy(() => import('../pages/empresas/EmpresaForm'));
