@@ -33,6 +33,10 @@ export interface EmpresaDTO{
     telefono?: string;
 }
 
+export interface CandidaturaFormData extends CandidaturaDTO{
+    preguntas?: PreguntaDTO[];
+}
+
 export interface EmpresaWithUsersDTO{
     id: string;
     nombre: string,
@@ -88,9 +92,21 @@ export interface Candidatura {
 // Interfaz para datos de pregunta
 export interface Pregunta {
     id: string;
+    candidatura: {
+        id: string;
+    };
     pregunta: string;
-    candidatura: Candidatura;
-    usuario: User;
+    usuario: {
+        id:string;
+        username:string;
+    };
+}
+
+//dto para operaciones con preguntas
+export interface PreguntaDTO {
+    id?: string;
+    candidaturaId: string;
+    pregunta: string;
 }
 
 // DTOs para formularios
@@ -129,10 +145,7 @@ export interface CandidaturaWithEmpresaDTO{
 }
 
 
-export interface PreguntaDTO {
-    pregunta: string;
-    candidaturaId: string;
-}
+
 
 
 // Tipos de respuesta de API

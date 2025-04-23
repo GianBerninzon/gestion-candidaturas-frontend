@@ -1,5 +1,5 @@
 import { Candidatura, CandidaturaWithEmpresaDTO, EstadoCandidatura } from "@/types";
-import { Box, Button, Paper, TextField, Typography, MenuItem, Table, TableBody, IconButton, TableContainer, TablePagination, TableHead, TableRow, TableCell, Chip, Alert, CircularProgress, Snackbar, Container, Dialog, DialogTitle, DialogContentText, DialogContent, Checkbox, DialogActions } from "@mui/material";
+import { Box, Button, Paper, TextField, Typography, MenuItem, Table, TableBody, IconButton, TableContainer, TablePagination, TableHead, TableRow, TableCell, Chip, Alert, CircularProgress, Snackbar, Container, Dialog, DialogTitle, DialogContentText, DialogContent, Checkbox, DialogActions, Tooltip } from "@mui/material";
 import { 
     Add as AddIcon,
     Search as SearchIcon,
@@ -8,12 +8,14 @@ import {
     Business as BusinessIcon,
     Person as PersonIcon,
     Delete as DeleteIcon,
+    QuestionAnswer as QuestionIcon
 
 } from "@mui/icons-material";
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import candidaturasService from "@/services/candidaturasService";
 import useAuthStore from "@/store/authStore";
+import preguntasService from "@/services/preguntasService";
 
 // Estados con colores y etiquetas
 const estadosConfig: Record<EstadoCandidatura, { color: string; label: string }> = {
@@ -45,6 +47,9 @@ const CandidaturasList: React.FC = () => {
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteSuccess, setDeleteSuccess] = useState(false);
     
+    //Estado para preguntas
+    const [preguntasCounts, setPreguntasCounts] = useState<Record<string, number>>({});
+
     const navigate = useNavigate();
     const isDev = import.meta.env.DEV;
     const {user} = useAuthStore();
@@ -92,13 +97,35 @@ const CandidaturasList: React.FC = () => {
                 console.log(`Candidaturas cargadas: ${response.content.length} de ${response.totalElements}`);
                 setCandidaturas(response.content as CandidaturaWithEmpresaDTO[]);
                 setTotalElements(response.totalElements);
+
+                // Obtener conteo de preguntas para cada candidatura
+                const candidaturaIds = response.content.map(c => c.id);
+                const countsPromises = candidaturaIds.map(async (id) => {
+                    try {
+                        const count = await preguntasService.getCountByCandidatura(id);
+                        return {id, count };
+                    } catch (error) {
+                        console.error(`Error al obtener conteo de preguntas para candidatura ${id}:`, error);
+                        return {id, count: 0};
+                    }
+                });
+
+                const countsResults = await Promise.all(countsPromises);
+                const countsMap = countsResults.reduce((acc, {id, count}) => {
+                    acc[id] = count;
+                    return acc;
+                }, {} as Record<string, number>);
+
+                setPreguntasCounts(countsMap);
             }else{
                 console.warn(`Respuesta vacia o sin contenido`);
                 setCandidaturas([] as CandidaturaWithEmpresaDTO[]);
                 setTotalElements(0);
+                setPreguntasCounts({});
             }
         } catch (err: any) {
             console.error(`Error al cargar candidaturas:`, err)
+            setPreguntasCounts({});
 
             // Mensaje de error mas informatico
             let errorMessage = `Erro al cargar candidaturas.`;
@@ -407,6 +434,7 @@ const CandidaturasList: React.FC = () => {
                                             )}
                                             <TableCell align="center">Empresa</TableCell>
                                             <TableCell align="center">Cargo</TableCell>
+                                            <TableCell align="center">Preguntas</TableCell>
                                             <TableCell align="center">Fecha</TableCell>
                                             <TableCell align="center">Estado</TableCell>
                                             {isAdmin && (
@@ -448,7 +476,22 @@ const CandidaturasList: React.FC = () => {
                                                                 }}
                                                                 onClick={() => handleViewCandidatura(candidatura.id)}
                                                             >
-                                                                {candidatura.cargo}
+                                                                <span>{candidatura.cargo}</span>
+                                                            </Box>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            {/* Mostrar ícono de preguntas si hay alguna */}
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+                                                                {preguntasCounts[candidatura.id] >0 && (
+                                                                    <Tooltip title={`${preguntasCounts[candidatura.id]} preguntas`}>
+                                                                        <Box sx={{ display: 'flex', alignItems: 'center', ml: 1}}>
+                                                                            <QuestionIcon color="info" fontSize="small" />
+                                                                            <Typography variant="caption" sx={{ ml: 0.5}}>
+                                                                                {preguntasCounts[candidatura.id]}
+                                                                            </Typography>
+                                                                        </Box>
+                                                                    </Tooltip>
+                                                                )}
                                                             </Box>
                                                         </TableCell>
                                                         <TableCell>

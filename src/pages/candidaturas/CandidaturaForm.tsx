@@ -1,4 +1,4 @@
-import { CandidaturaDTO, Empresa, EstadoCandidatura, Reclutador } from "@/types";
+import { CandidaturaDTO, Empresa, EstadoCandidatura, Pregunta, PreguntaDTO, Reclutador } from "@/types";
 import { 
     Alert, Button, CircularProgress, Paper, Typography,
     Autocomplete, 
@@ -36,6 +36,8 @@ import empresasService from "@/services/empresasService";
 import candidaturasService from "@/services/candidaturasService";
 import reclutadoresService from "@/services/reclutadoresService";
 import _default from "@mui/material/InitColorSchemeScript";
+import preguntaService from "@/services/preguntasService";
+import PreguntasForm from "../preguntas/PreguntasForm";
 
 // Estados con colores y etiquetas
 const estadosConfig = {
@@ -65,19 +67,31 @@ interface ReclutadorFormData{
 const CandidaturaForm = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+
     const [empresas, setEmpresas] = useState<Empresa[]>([]);
     const [reclutadores, setReclutadores] = useState<Reclutador[]>([]);
     const [selectedReclutadores, setSelectedReclutadores] = useState<Reclutador[]>([]);
+    const [loadingReclutadores, setLoadingReclutadores] = useState(false);
+    const [selectedEmpresaId, setSelectedEmpresaId] = useState<string>('');
+
+    //Gestión de empresas
     const [openNuevaEmpresa, setOpenNuevaEmpresa] = useState(false);
     const [openNuevoReclutador, setOpenNuevoReclutador] = useState(false);
     const [creatingEmpresa, setCreatingEmpresa] = useState(false);
     const [creatingReclutador, setCreatingReclutador] = useState(false);
-    const [loadingReclutadores, setLoadingReclutadores] = useState(false);
-    const [selectedEmpresaId, setSelectedEmpresaId] = useState<string>('');
+    
+    
+
+    //Gestión de preguntas
+    const [preguntas, setPreguntas] = useState<PreguntaDTO[]>([]);
+    const [nuevasPreguntas, setNuevasPreguntas] = useState<PreguntaDTO[]>([]);
+    const [preguntasExistentes, setPreguntasExistentes] = useState<Pregunta[]>([]);
+    const [preguntasAEliminar, setPreguntasAEliminar] = useState<string[]>([]);
 
     // Form para la candidatura principal
     const {control, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CandidaturaDTO>({
@@ -90,7 +104,7 @@ const CandidaturaForm = () => {
         }
     });
 
-    // Observar cambios en empresId para cargar reclutadores asociados
+    // para empresa seleccionada
     const watchEmpresaId = watch('empresaId');
 
     // Form para nueva empresa (dialogo)
@@ -214,10 +228,13 @@ const CandidaturaForm = () => {
         try {
             // Guardar la candidatura en la API
             let candidatura;
+            let candidaturaId;
             if(id){
                 await candidaturasService.updateCandidatura(id, data);
+                candidaturaId = id;
             }else {
                 candidatura = await candidaturasService.createCandidatura(data);
+                candidaturaId = candidatura.id;
             }
 
             // Asociar reclutadores seleccionados a la candidatura
@@ -236,6 +253,26 @@ const CandidaturaForm = () => {
                 // Asociar
                 for(const reclutador of selectedReclutadores){
                     await candidaturasService.asignarReclutador(candidaturaId, reclutador.id);
+                }
+            }
+
+            // Guardar las nuevas preguntas
+            if(nuevasPreguntas.length > 0){
+                const preguntasValidas = nuevasPreguntas.filter(p => p.pregunta.trim() !== '');
+
+                if(preguntasValidas.length > 0){
+                    //Asegurarse que todas las preguntas tengan el ID de candidatura
+                    const preguntasConId = preguntasValidas.map(p => ({
+                        ...p,
+                        candidaturaId
+                    }));
+
+                    // crear cada pregunta en la API
+                    await Promise.all(
+                        preguntasConId.map(pregunta =>
+                            preguntaService.createPregunta(pregunta)
+                        )
+                    );
                 }
             }
 
@@ -367,6 +404,13 @@ const CandidaturaForm = () => {
         setValueReclutador('empresaId', selectedEmpresaId);
         setOpenNuevoReclutador(true);
     };
+
+    // Manejador para cambios en las preguntas
+    const handlePreguntasChange = (preguntas: PreguntaDTO[]) => {
+        setNuevasPreguntas(preguntas);
+    };
+
+    
 
     return (
         <Box>
@@ -671,6 +715,15 @@ const CandidaturaForm = () => {
                                 />
                             </Box>
                         </Box>
+
+                        {/* Preguntas de la candidatura */}
+                        <Divider sx={{ my: 3}} />
+                        <PreguntasForm 
+                            candidaturaId={id || ''}
+                            onPreguntasChange={handlePreguntasChange}
+                            editable={true}
+                        />
+                        <Divider sx={{ my: 3 }} />
                             {/* Botones de accion */}
                             <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
                                 <Button

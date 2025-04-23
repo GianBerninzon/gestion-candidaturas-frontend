@@ -1,5 +1,6 @@
-import { Candidatura, EstadoCandidatura, Reclutador } from "@/types";
+import { Candidatura, EstadoCandidatura, PreguntaDTO, Reclutador } from "@/types";
 import candidaturasService from "@/services/candidaturasService";
+import preguntasService from "@/services/preguntasService";
 import {
     ArrowBack as ArrowBackIcon,
     Edit as EditIcon,
@@ -7,7 +8,8 @@ import {
     Person as PersonIcon,
     Description as DescriptionIcon,
     CalendarMonth as CalendarMonthIcon,
-    Flag as FlagIcon
+    Flag as FlagIcon,
+    Add as AddIcon
 } from "@mui/icons-material";
 import {
     Box,
@@ -15,18 +17,27 @@ import {
     Card,
     CardContent,
     Chip,
+    CircularProgress,
+    Container,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogTitle,
     Divider,
     IconButton,
     Menu,
     MenuItem,
     Paper,
     Skeleton,
+    TextField,
     Tooltip,
     Typography
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import reclutadoresService from "@/services/reclutadoresService";
+import useAuthStore from "@/store/authStore";
+import PreguntasPanel from "../preguntas/preguntasPanel";
 
 
 
@@ -59,13 +70,28 @@ const getEstadoColor = (estado: EstadoCandidatura) => {
 const CandidaturaDetail = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
+    const {user} = useAuthStore();
     
     const [candidatura, setCandidatura] = useState<Candidatura | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [reclutadoresInfo, setReclutadoresInfo] = useState<Reclutador[]>([]);
+
+    // Estados para preguntas
+    const [openAddPreguntaDialog, setOpenAddPreguntaDialog] = useState(false);
+    const [nuevaPregunta, setNuevaPregunta] = useState('');
+    const [savingPregunta, setSavingPregunta] = useState(false);
+    const [preguntaError, setPreguntaError] = useState<string | null>(null);
+
+    // Estado para refrescar preguntas
+    const [refreshPreguntas, setRefreshPreguntas] = useState(0);
+
+    const isOwner = candidatura && user && candidatura.userInfo?.id === user.id;
+    const isAdmin = user && (user.role === 'ADMIN' || user.role === 'ROOT');
+    const canEdit = isOwner || isAdmin;
     
+    // Obtener datos de la candidatura (existente)
     useEffect(() => {
         const fetchCandidatura = async () => {
             if (!id) {
@@ -99,7 +125,7 @@ const CandidaturaDetail = () => {
         
         fetchCandidatura();
     }, [id]);
-    
+
     // Navegar de vuelta a la lista de candidaturas
     const handleBack = () => {
         navigate('/candidaturas');
@@ -119,6 +145,7 @@ const CandidaturaDetail = () => {
             // Recargar los datos actualizados
             const candidaturaActualizada = await candidaturasService.getCandidaturaById(id);
             setCandidatura(candidaturaActualizada);
+            setAnchorEl(null);
         } catch (error) {
             console.error('Error al actualizar el estado:', error);
         }
@@ -135,21 +162,63 @@ const CandidaturaDetail = () => {
     const handleViewReclutador = (reclutadorId: string) => {
         navigate(`/reclutadores/${reclutadorId}`);
     };
+
+    // Abrir diálogo para agregar pregunta
+    const handleOpenAddPregunta = () => {
+        setNuevaPregunta('');
+        setPreguntaError(null);
+        setOpenAddPreguntaDialog(true);
+    };
+
+    // Guardar nueva pregunta
+    const handleSavePregunta = async () => {
+        if (!id || !nuevaPregunta.trim()) {
+            setPreguntaError('La pregunta no puede estar vacía');
+            return;
+        }
+        
+        setSavingPregunta(true);
+        setPreguntaError(null);
+        
+        try {
+            const preguntaDTO: PreguntaDTO = {
+                candidaturaId: id,
+                pregunta: nuevaPregunta.trim()
+            };
+            
+            await preguntasService.createPregunta(preguntaDTO);
+            
+            // Cerrar diálogo y limpiar
+            setOpenAddPreguntaDialog(false);
+            setNuevaPregunta('');
+            setRefreshPreguntas(prev => prev + 1);
+        } catch (error) {
+            console.error('Error al guardar la pregunta:', error);
+            setPreguntaError('Error al guardar la pregunta. Inténtalo de nuevo.');
+        } finally {
+            setSavingPregunta(false);
+        }
+    };
+
+    //Actuazlizar preguntas después de crear una
+    const handlePreguntaCreated = () => {
+        setRefreshPreguntas(prev => prev + 1);
+    };
     
     if (loading) {
         return (
-            <Box sx={{ p: 3 }}>
+            <Container maxWidth="lg" sx={{ py: 3 }}>
                 <Skeleton variant="rectangular" width="100%" height={200} />
                 <Skeleton variant="text" sx={{ mt: 2 }} />
                 <Skeleton variant="text" />
                 <Skeleton variant="text" width="60%" />
-            </Box>
+            </Container>
         );
     }
     
     if (error) {
         return (
-            <Box sx={{ p: 3 }}>
+            <Container maxWidth="lg" sx={{ py: 3 }}>
                 <Paper sx={{ p: 3, bgcolor: 'error.light', color: 'error.contrastText' }}>
                     <Typography variant="h6">{error}</Typography>
                     <Button 
@@ -161,7 +230,7 @@ const CandidaturaDetail = () => {
                         Volver a la lista
                     </Button>
                 </Paper>
-            </Box>
+            </Container >
         );
     }
     
@@ -170,7 +239,7 @@ const CandidaturaDetail = () => {
     }
     
     return (
-        <Box sx={{ p: 3, width: '100%', maxWidth: '1200px', mx: 'auto' }}>
+        <Container maxWidth="lg" sx={{ py: 3 }}>
             {/* Cabecera con acciones */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap' }}>
                 <Button
@@ -181,14 +250,16 @@ const CandidaturaDetail = () => {
                 >
                     Volver a la lista
                 </Button>
-                <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<EditIcon />}
-                    onClick={handleEdit}
-                >
-                    Editar Candidatura
-                </Button>
+                {canEdit && (
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={<EditIcon />}
+                        onClick={handleEdit}
+                    >
+                        Editar Candidatura
+                    </Button>
+                )}
             </Box>
             
             {/* Tarjeta principal con información de la candidatura */}
@@ -206,14 +277,17 @@ const CandidaturaDetail = () => {
                             color={getEstadoColor(candidatura.estado) as any}
                             sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2, px: 1 }}
                         />
-                        <Button 
-                            variant="outlined" 
-                            size="small" 
-                            onClick={(e) => setAnchorEl(e.currentTarget)}
-                            sx={{ ml: 1 }}
-                        >
-                            Cambiar estado
-                        </Button>
+                        {canEdit && (
+                            <Button 
+                                variant="outlined" 
+                                size="small" 
+                                onClick={(e) => setAnchorEl(e.currentTarget)}
+                                sx={{ ml: 1 }}
+                            >
+                                Cambiar estado
+                            </Button>
+                        )}
+                        
                         <Menu
                             anchorEl={anchorEl}
                             open={Boolean(anchorEl)}
@@ -224,7 +298,6 @@ const CandidaturaDetail = () => {
                                     key={estado} 
                                     onClick={() => {
                                         handleUpdateEstado(estado);
-                                        setAnchorEl(null);
                                     }}
                                     selected={candidatura.estado === estado}
                                 >
@@ -361,7 +434,73 @@ const CandidaturaDetail = () => {
                     )}
                 </CardContent>
             </Card>
-        </Box>
+
+                    {/* Seccion de preguntas */}
+                    {id && (
+                        <>
+                            <PreguntasPanel 
+                                candidaturaId={id}
+                                editable={!!canEdit}
+                                onAddClick={canEdit ? handleOpenAddPregunta : undefined}
+                                key={`preguntas-panel-${refreshPreguntas}`}
+                            />
+
+                            {/* {canEdit && (
+                                <Box sx={{ mt: 3}}>
+                                    <Typography variant="h6" sx={{mb:2}}>
+                                        Agregar nueva pregunta
+                                    </Typography>
+                                    <NuevaPreguntaField 
+                                        candidaturaId={id}
+                                        onPreguntaCreated={handlePreguntaCreated}
+                                    />
+                                </Box>
+                            )} */}
+                        </>
+                    )}
+                    {/* Diálogo para agregar pregunta */}
+                    <Dialog
+                        open={openAddPreguntaDialog}
+                        onClose={() => !savingPregunta && setOpenAddPreguntaDialog(false)}
+                        fullWidth
+                        maxWidth="md"
+                    >
+                        <DialogTitle>Agregar nueva pregunta</DialogTitle>
+                        <DialogContent>
+                        <TextField
+                            autoFocus
+                            margin="dense"
+                            label="Pregunta"
+                            fullWidth
+                            multiline
+                            rows={3}
+                            value={nuevaPregunta}
+                            onChange={(e) => setNuevaPregunta(e.target.value)}
+                            placeholder="Escribe la pregunta de entrevista..."
+                            error={!!preguntaError}
+                            helperText={preguntaError}
+                            disabled={savingPregunta}
+                        />
+                        </DialogContent>
+                        <DialogActions>
+                            <Button 
+                                onClick={() => setOpenAddPreguntaDialog(false)}
+                                disabled={savingPregunta}
+                            >
+                                Cancelar
+                            </Button>
+                            <Button 
+                                type="submit"
+                                variant="contained"
+                                color="primary"
+                                disabled={savingPregunta}
+                                startIcon={savingPregunta ? <CircularProgress size={20} /> : <AddIcon />}
+                            >
+                                {savingPregunta ? 'Guardando...' : 'Guardar'}
+                            </Button>
+                        </DialogActions>
+                    </Dialog>
+        </Container>
     );
 };
 
